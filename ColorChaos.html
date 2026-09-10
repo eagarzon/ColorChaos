@@ -1,0 +1,1862 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ColorChaos</title>
+<style>
+/* ============================================================================
+   ColorChaos — versión autocontenida de "Arrastra Colores", en un solo HTML.
+   Sin Firebase, sin pared, sin admin remoto: todo el estado vive en memoria
+   local (con un respaldo simple en localStorage por si hay un refresh
+   accidental). El panel de ajustes reemplaza a admin.html como un modal local.
+   ============================================================================ */
+:root {
+  --bg: #0b0e14;
+  --panel: #141926;
+  --panel-2: #1c2333;
+  --border: #2b3346;
+  --text: #eef1f7;
+  --text-dim: #9aa4b8;
+  --accent: #5b8def;
+  --ok: #35c26a;
+  --danger: #e5533d;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
+body { overflow: hidden; overscroll-behavior: none; }
+
+button { font: inherit; cursor: pointer; }
+.btn {
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  border-radius: 0.6rem; padding: 0.6rem 1.1rem; font-size: 1rem;
+}
+.btn:active { transform: scale(0.98); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 700; }
+.btn-danger  { background: transparent; border-color: var(--danger); color: var(--danger); }
+.btn-ghost   { background: transparent; }
+.btn-sm { padding: 0.35rem 0.7rem; font-size: 0.85rem; }
+.btn-lg { padding: 1rem 2rem; font-size: 1.4rem; border-radius: 0.9rem; }
+.btn-join { font-size: 2.2rem; line-height: 1; padding: 0.8rem 1.6rem; border-radius: 1rem; }
+.btn-icon { font-size: 1.5rem; line-height: 1; padding: 0.55rem 0.9rem; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------------- MESA ---------------- */
+#game { position: fixed; inset: 0; display: block; touch-action: none; }
+
+#overlay { position: fixed; inset: 0; pointer-events: none; }
+#overlay .side-panel {
+  position: absolute; pointer-events: auto;
+  display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+  background: rgba(20, 25, 38, 0.92); border: 1px solid var(--border);
+  border-radius: 1rem; padding: 1rem 1.25rem; min-width: 15rem; max-width: 22rem;
+}
+#overlay .side-panel h3 { margin: 0; font-size: 1rem; }
+#overlay .side-panel .row { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+#overlay .side-panel input[type=text] {
+  font: inherit; text-align: center; width: 12rem;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 0.5rem; padding: 0.5rem 0.7rem;
+}
+.swatches { display: grid; grid-template-columns: repeat(4, 2.4rem); gap: 0.5rem; }
+#overlay canvas.demo-ico { display: block; }
+
+/* Resumen de ronda — sin texto de etiquetas, solo iconos de pelota + conteo */
+#overlay .sum-name { font-weight: 800; font-size: 1.05rem; }
+#overlay .sum-grid { display: flex; flex-wrap: wrap; gap: 0.45rem 0.7rem; justify-content: center; max-width: 20rem; }
+#overlay .sum-item { display: flex; align-items: center; gap: 0.3rem; font-weight: 800; font-family: var(--mono); font-size: 1.1rem; }
+#overlay .sum-item .pos { color: var(--ok); }
+#overlay .sum-item .neg { color: var(--danger); }
+#overlay canvas.ball-ico { width: 32px; height: 32px; display: block; }
+#overlay .sum-total { font-family: var(--mono); font-size: 1rem; color: var(--text-dim); }
+#overlay .sum-total .pos { color: var(--ok); font-weight: 800; }
+#overlay .sum-total .neg { color: var(--danger); font-weight: 800; }
+.swatch {
+  width: 2.4rem; height: 2.4rem; border-radius: 50%; border: 3px solid transparent; cursor: pointer;
+}
+.swatch.sel { border-color: #fff; }
+.swatch.taken { opacity: 0.25; cursor: not-allowed; }
+
+/* Cada lado se coloca y rota hacia su asiento */
+.at-top    { top: 3vh;    left: 50%; transform: translateX(-50%) rotate(180deg); }
+.at-bottom { bottom: 3vh; left: 50%; transform: translateX(-50%); }
+.at-left   { left: 3vh;   top: 50%;  transform: translateY(-50%) rotate(90deg); transform-origin: center; }
+.at-right  { right: 3vh;  top: 50%;  transform: translateY(-50%) rotate(-90deg); transform-origin: center; }
+
+.hidden { display: none !important; }
+
+/* Botones de esquina: sonido | reiniciar | ajustes | pantalla completa, de izquierda a derecha. */
+.corner-btn {
+  position: fixed; top: 12px; right: 64px; z-index: 9990;
+  width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+  padding: 0; margin: 0; border-radius: 0.6rem; cursor: pointer; font-size: 1.35rem; line-height: 1;
+  font-family: inherit; color: var(--text); background: rgba(20,25,38,0.72);
+  border: 1px solid var(--border); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  opacity: 0.55; transition: opacity 0.12s, transform 0.05s;
+  touch-action: manipulation; -webkit-user-select: none; user-select: none;
+}
+.corner-btn:hover, .corner-btn:focus { opacity: 1; outline: none; }
+.corner-btn:active { transform: scale(0.94); }
+#soundBtn { right: 116px; }
+#settingsBtn { right: 168px; }
+#fsBtnCC { right: 12px; }
+
+/* Logo Alsis: grande/opaco/clicable fuera de ronda; chico/tenue/no clicable durante countdown+playing. */
+.logo-alsis {
+  position: fixed; top: 12px; left: 12px; z-index: 9200; display: block; line-height: 0;
+  opacity: 1; transition: opacity 0.35s ease;
+}
+.logo-alsis img { display: block; height: 56px; width: auto; transition: height 0.35s ease; }
+.logo-alsis.ingame { opacity: 0.35; pointer-events: none; }
+.logo-alsis.ingame img { height: 30px; }
+
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 9995; background: rgba(6,9,15,0.75);
+  display: flex; align-items: center; justify-content: center; padding: 2vh 3vw;
+}
+.modal-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 1rem;
+  padding: 1.75rem 2.25rem; display: flex; flex-direction: column; align-items: center; gap: 1.25rem;
+}
+.modal-icon { font-size: 3.5rem; line-height: 1; }
+.modal-actions { display: flex; gap: 1rem; }
+.modal-card.settings-card {
+  max-width: 34rem; width: 100%; max-height: 94vh; overflow-y: auto;
+  align-items: stretch; text-align: left; padding: 1.5rem;
+}
+
+/* ---------------- Panel de ajustes (antes admin.html) ---------------- */
+.settings-head { display: flex; align-items: center; justify-content: flex-end; margin-bottom: 0.25rem; }
+.card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 1rem; padding: 1.25rem; margin-bottom: 1.25rem; }
+.card h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+.field { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.6rem; }
+.field label { color: var(--text-dim); }
+.field input { width: 8rem; font: inherit; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.4rem 0.6rem; text-align: right; }
+.param-grid { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem 1rem; align-items: center; }
+.param-grid label { color: var(--text-dim); font-size: 0.9rem; }
+.param-grid input { width: 7rem; font: inherit; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.35rem 0.5rem; text-align: right; }
+.state-line { font-family: var(--mono); color: var(--text-dim); font-size: 0.9rem; }
+.scorebar { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem; }
+.scorebar .chip { display: flex; align-items: center; gap: 0.4rem; font-family: var(--mono); font-size: 0.85rem; }
+.scorebar .dot { width: 0.9rem; height: 0.9rem; border-radius: 50%; flex-shrink: 0; }
+
+/* Íconos de bola reutilizados en los widgets "sin texto" del panel de ajustes (no son las bolas
+   reales del canvas — solo una aproximación en CSS para no meter el motor de dibujo en el modal). */
+.ball-swatch { display: inline-block; flex-shrink: 0; position: relative; border-radius: 50%; width: 22px; height: 22px;
+  box-shadow: inset -2px -3px 4px rgba(0,0,0,0.35), inset 2px 2px 3px rgba(255,255,255,0.25); }
+.ball-swatch.k-neutral { background: radial-gradient(circle at 35% 30%, #b4b8bf, #6f7378); }
+.ball-swatch.k-comodin { background: conic-gradient(red,orange,yellow,green,blue,violet,red); }
+.ball-swatch.k-comodin::after { content: ""; position: absolute; inset: 3px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff, #cfd3d8);
+  box-shadow: inset -1px -2px 3px rgba(0,0,0,0.2); }
+.ball-swatch.k-dorada { background: radial-gradient(circle at 35% 30%, #fde08a, #f7c948);
+  box-shadow: inset -2px -3px 4px rgba(0,0,0,0.25), 0 0 8px 2px rgba(247,201,72,0.55); }
+.ball-swatch.k-negra { background: radial-gradient(circle at 35% 30%, #3a3a3a, #0c0c0c);
+  box-shadow: inset -2px -3px 4px rgba(0,0,0,0.4), 0 0 0 2px rgba(255,255,255,0.85); }
+
+.slider-row { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.85rem; }
+.slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+.slider-row .slider-val { font-family: var(--mono); color: var(--text-dim); font-size: 0.85rem; min-width: 3.4rem; text-align: right; }
+.slider-icon-clock { font-size: 1.25rem; width: 22px; text-align: center; }
+
+.ball-toggle { display: inline-flex; align-items: center; gap: 0.5rem; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 0.6rem; padding: 0.5rem 0.8rem; cursor: pointer;
+  flex-shrink: 0; }
+.ball-toggle .ball-swatch { width: 30px; height: 30px; }
+.ball-toggle-check { font-size: 1.1rem; line-height: 1; }
+.neutral-row { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+.neutral-row .ball-toggle { margin-bottom: 0; }
+.value-box-row { display: flex; gap: 0.5rem; flex: 1; min-width: 12rem; }
+.value-box { flex: 1; display: flex; flex-direction: row; align-items: center; justify-content: center;
+  gap: 0.4rem; background: var(--panel-2); border: 2px solid var(--border); border-radius: 0.6rem;
+  padding: 0.5rem 0.4rem; cursor: pointer; min-height: 2.6rem; }
+.value-box.sel { border-color: var(--accent); }
+.value-box-label { font-family: var(--mono); color: var(--text-dim); font-size: 0.85rem; }
+
+.special-group { border: 1px solid var(--border); border-radius: 0.7rem; padding: 0.75rem; margin-bottom: 0.85rem; }
+.special-group .ball-toggle { margin-bottom: 0.7rem; }
+
+.boca-widget { display: flex; align-items: flex-end; gap: 1.1rem; margin-bottom: 0.85rem; }
+.boca-figure { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+.boca-h-slider { width: 160px; accent-color: var(--accent); }
+.boca-vcol { width: 34px; height: 108px; position: relative; }
+.boca-v-slider {
+  position: absolute; top: 50%; left: 50%; width: 100px; height: 8px;
+  transform: translate(-50%, -50%) rotate(-90deg); accent-color: var(--accent);
+}
+.boca-vcol .slider-val { position: absolute; bottom: -1.3rem; left: 50%; transform: translateX(-50%); white-space: nowrap; }
+.grow-arrow { font-size: 1.1rem; color: var(--text-dim); flex-shrink: 0; }
+
+.ball-swatch.k-verde { background: radial-gradient(circle at 35% 30%, #8beab0, #2f9e5c); }
+.speed-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.85rem; flex-wrap: wrap; }
+.speed-row input[type="range"] { flex: 1; min-width: 6rem; accent-color: var(--accent); }
+.speed-box { width: 4.2rem; font: inherit; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.3rem 0.4rem; text-align: center; }
+.speed-ineq { font-family: var(--mono); color: var(--text-dim); font-size: 1.1rem; flex-shrink: 0; }
+
+/* Widgets sin texto añadidos en esta pasada: fila de fase/rondas, toggle de "piso" y bloque de parpadeo. */
+@keyframes ccblink { 0%, 49.9% { opacity: 1 } 50%, 100% { opacity: 0.16 } }
+.blink-box { width: 22px; height: 22px; border-radius: 5px; background: var(--accent); flex-shrink: 0;
+  animation: ccblink var(--blinkdur, 1s) infinite linear; }
+.blink-timeline { margin-bottom: 0.85rem; }
+.blink-timeline > svg { display: block; width: 100%; }
+.blink-timeline-row { display: flex; align-items: center; gap: 0.7rem; margin-top: 0.35rem; }
+.blink-timeline-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+.phase-line { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
+.phase-glyph { font-size: 1.2rem; line-height: 1; }
+.round-pips { letter-spacing: 0.18em; color: var(--text-dim); font-size: 0.95rem; word-break: break-all; }
+.round-pips b { color: var(--accent); font-weight: 400; }
+.scorebar-empty { color: var(--text-dim); opacity: 0.5; letter-spacing: 0.25em; font-size: 0.95rem; }
+.group-sep { height: 1px; background: var(--border); margin: 1.15rem 0; }
+</style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="overlay"></div>
+
+  <button id="resetBtn" class="corner-btn" aria-label="Reiniciar">↺</button>
+  <button id="soundBtn" class="corner-btn" aria-label="Sonido">🔊</button>
+  <button id="settingsBtn" class="corner-btn" aria-label="Ajustes">⚙</button>
+
+  <a id="logoLink" class="logo-alsis" href="https://alsis.com.mx" target="_blank" rel="noopener" aria-label="Alsis Tecnología">
+    <img id="logoImg" alt="Alsis Tecnología">
+  </a>
+
+  <div id="resetModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-icon">↺</div>
+      <div class="modal-actions">
+        <button id="resetCancel" class="btn btn-icon" aria-label="Cancelar">✖</button>
+        <button id="resetConfirm" class="btn btn-icon btn-danger" aria-label="Confirmar">✅</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settingsModal" class="modal-backdrop hidden">
+    <div class="modal-card settings-card">
+      <div class="settings-head">
+        <button id="settingsClose" class="btn btn-icon" aria-label="Cerrar ajustes" title="Cerrar ajustes">✖</button>
+      </div>
+      <div id="settingsBody"></div>
+    </div>
+  </div>
+
+<script>
+/* ---------------- Botón de pantalla completa (antes /_shared/fullscreen-button.js) ---------------- */
+(function () {
+  "use strict";
+  var GLYPH_ENTER = "⛶", GLYPH_EXIT = "✕";
+  function requestFs() {
+    var el = document.documentElement;
+    var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (fn) { try { var p = fn.call(el); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
+  }
+  function exitFs() {
+    var fn = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (fn) { try { var p = fn.call(document); if (p && p.catch) p.catch(function () {}); } catch (e) {} }
+  }
+  function isFs() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+  }
+  function build() {
+    var btn = document.createElement("button");
+    btn.id = "fsBtnCC";
+    btn.className = "corner-btn";
+    btn.type = "button";
+    btn.setAttribute("aria-label", "Pantalla completa");
+    btn.textContent = GLYPH_ENTER;
+    btn.addEventListener("click", function () { if (isFs()) exitFs(); else requestFs(); });
+    document.body.appendChild(btn);
+    sync();
+  }
+  function sync() {
+    var btn = document.getElementById("fsBtnCC");
+    if (!btn) return;
+    var full = isFs();
+    btn.textContent = full ? GLYPH_EXIT : GLYPH_ENTER;
+    btn.setAttribute("aria-label", full ? "Salir de pantalla completa" : "Pantalla completa");
+  }
+  ["fullscreenchange", "webkitfullscreenchange", "msfullscreenchange"].forEach(function (evt) {
+    document.addEventListener(evt, sync);
+  });
+  if (document.body) build(); else document.addEventListener("DOMContentLoaded", build);
+})();
+</script>
+
+<script>
+/* ---------------- Configuración (antes content.js) ----------------
+   Defaults + formulario de ajustes. Se quitaron pelotaBotellaTam/botellaDesnivelMax
+   (eran exclusivos de la botella de la pared, que esta versión no tiene). */
+const CFG_BASE = {
+  numRondas: 3,
+  duracion: 90,
+  pelotasIniciales: 16,
+  usarNeutrales: true,        // false = no hay pelotas neutrales en el tablero (ni al inicio ni en el respawn)
+  neutralValor: -1,           // efecto en el marcador al capturar una neutral: -1, 0 o +1
+  neutralesInicial: 4,
+  aumentoPorRonda: 25,
+  maxPelotas: 120,
+  puntajeInicial: 0,
+  pisoEnCero: false,
+
+  radio: 0.020,
+  velocidad: 0.26,
+  velocidadMin: 0.12,
+  velocidadMax: 0.70,
+  restitucion: 1.0,
+  bahiaProfundidad: 0.06,
+  bocaAnchoInicial: 0.22,
+  bocaCrecimiento: 0.07,
+  usarComodin: true,         // false = el comodín no entra en el sorteo de especiales
+  comodinValor: 1,
+  pesoComodin: 50,
+  maxComodines: 2,
+  estrellasComodin: 1,
+  usarDorada: true,          // false = la dorada no entra en el sorteo de especiales
+  doradaValor: 5,
+  pesoDorada: 15,
+  maxDoradas: 1,
+  estrellasDorada: 5,
+  usarNegra: true,           // false = la negra no entra en el sorteo de especiales
+  negraValor: 5,
+  pesoNegra: 35,
+  maxNegras: 2,
+  calaverasNegra: 5,
+  intervaloEspecial: 8,
+  parpadeoDesde: 10,
+  parpadeoHzInicial: 1,
+  parpadeoHzFinal: 7,
+  margenAgarre: 0.020,
+  margenInferiorIOS: 0.05,   // franja reservada abajo, solo iOS: evita el gesto de salir de la app
+  cronometroTransparencia: 0.85, // 0 = pastel opaco, más = más transparente (alpha del relleno = 1 - esto)
+
+  paleta: ["#e5484d", "#3e63dd", "#30a46c", "#f5a623", "#8e4ec6", "#00a2c7", "#d6409f", "#f76808"],
+  colorNeutral: "#8b8f96",
+  colorComodin: "#ffffff",
+  colorDorada: "#f7c948",
+  colorNegra: "#111111",
+  colorCuentaRegresiva: "#30a46c" // luces del conteo 3-2-1, se apagan una a una
+};
+
+// Los que tienen su propio widget (ver SLIDERS / SPECIALS / BOCA / BOLAS_SESION más abajo, y el
+// grupo de neutrales — checkbox + selector de valor + slider, ver renderNeutralBlock) NO están
+// aquí — se renderizan aparte, a mano.
+// Ya no queda ningún control como "número + etiqueta de texto": numRondas y puntajeInicial pasaron
+// a SLIDERS (ícono + slider); intervaloEspecial se renderiza a mano junto al bloque de especiales;
+// pisoEnCero es un toggle con figura de "piso"; parpadeoDesde/parpadeoHzInicial/parpadeoHzFinal
+// forman el bloque "parpadeo" (línea de tiempo + dos cuadros que parpadean en vivo).
+const PARAMS = [];
+
+// Sliders "sin texto": ícono en vez de etiqueta, en vez de un <input type=number>. Mismo campo
+// "grupo" que PARAMS, para intercalarse en el lugar correcto del formulario.
+// icon: "size" → bola chica/grande en cada extremo; "clock" → reloj a la izquierda; "bounce" →
+// trayectoria de rebote punteada; "screenBottom" → pantalla con la franja de abajo marcada;
+// "timerFade" → el pastel del cronómetro al 1% y al 90% de opacidad, en cada extremo;
+// "emoji:<glyph>" → ese emoji tal cual, a la izquierda. unit se agrega al valor numérico.
+const SLIDERS = [
+  ["duracion", "clock", 10, 600, 5, "", "Sesión"],
+  ["numRondas", "rounds", 1, 20, 1, "", "Sesión"],
+  ["puntajeInicial", "cushion", 0, 500, 5, "", "Sesión"],
+  ["radio", "size", 0.008, 0.05, 0.001, "", "Juego"],
+  ["restitucion", "bounce", 0.5, 1, 0.01, "", "Juego"],
+  ["margenAgarre", "emoji:🤏", 0, 0.08, 0.002, "", "Juego"],
+  ["margenInferiorIOS", "screenBottom", 0, 0.2, 0.005, "", "Juego"],
+  ["cronometroTransparencia", "timerFade", 0, 0.9, 0.05, "", "Juego"]
+];
+
+// Bloque "Rapidez": rapidez mínima y máxima como textbox a los lados de un slider (tortuga...
+// liebre) para la rapidez base. Sin checkbox — siempre hay velocidad.
+const VELOCIDAD = {
+  velocidadMin: [0.02, 0.5, 0.01],
+  velocidad: [0.05, 0.8, 0.01],
+  velocidadMax: [0.2, 1.5, 0.05]
+};
+
+// Bloque "Pelotas iniciales" (sesión): pelotasIniciales + aumentoPorRonda + maxPelotas juntos,
+// icono+slider cada uno. aumentoPorRonda también escala neutralesInicial (un solo factor
+// compartido) aunque el widget de neutrales no repita este control.
+const BOLAS_SESION = {
+  pelotasIniciales: [2, 300, 1],
+  aumentoPorRonda: [0, 200, 5],
+  maxPelotas: [0, 600, 10]
+};
+
+// Bloque gráfico de la boca: figura (ancho horizontal + profundidad vertical, en vivo) + slider de
+// crecimiento por ronda con par de íconos chico/grande.
+const BOCA = {
+  bocaAnchoInicial: [0.08, 0.7, 0.01],
+  bahiaProfundidad: [0.03, 0.2, 0.005],
+  bocaCrecimiento: [0, 0.25, 0.005]
+};
+
+// Bloques de especiales (comodín/dorada/negra): mismo tratamiento para los tres — checkbox
+// "Usar X" (ícono de esa bola + check) y, si está marcado, valor/peso/máx-en-mesa/ráfaga en un
+// solo bloque, icono+slider cada uno. starGlyph es el emoji real que usa spawnBurst() para esa
+// bola (💀 negra, ⭐ dorada/comodín), reutilizado aquí como ícono del slider de ráfaga.
+const SPECIALS = [
+  { kind: "comodin", usar: "usarComodin", valor: "comodinValor", peso: "pesoComodin", max: "maxComodines", star: "estrellasComodin", starGlyph: "⭐",
+    valorRange: [1, 20, 1], pesoRange: [0, 100, 1], maxRange: [0, 10, 1], starRange: [0, 20, 1] },
+  { kind: "dorada", usar: "usarDorada", valor: "doradaValor", peso: "pesoDorada", max: "maxDoradas", star: "estrellasDorada", starGlyph: "⭐",
+    valorRange: [1, 50, 1], pesoRange: [0, 100, 1], maxRange: [0, 10, 1], starRange: [0, 20, 1] },
+  { kind: "negra", usar: "usarNegra", valor: "negraValor", peso: "pesoNegra", max: "maxNegras", star: "calaverasNegra", starGlyph: "💀",
+    valorRange: [1, 50, 1], pesoRange: [0, 100, 1], maxRange: [0, 10, 1], starRange: [0, 20, 1] }
+];
+</script>
+
+<script>
+// Logo Alsis embebido (base64, sobrevive si el HTML se descarga suelto).
+const LOGO_FULL_SRC = "data:image/png;base64,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";
+const LOGO_A_SRC = "data:image/png;base64,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";
+
+// ---------------- Estado de tablero (CFG viva = defaults + lo editado en Ajustes) ----------------
+let CFG = Object.assign({}, CFG_BASE);
+
+// ---------------- Canvas ----------------
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+let W = 0, H = 0, minDim = 0;
+function resize() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  minDim = Math.min(W, H);
+}
+window.addEventListener("resize", resize); resize();
+
+const R = () => CFG.radio * minDim;
+const SPEED = () => CFG.velocidad * minDim;
+const now = () => performance.now();
+// En iOS, el swipe-para-salir (ir al selector de apps) se dispara desde el borde inferior de la
+// pantalla — un gesto de sistema que ninguna página puede bloquear. La mitigación es dejar una
+// franja sin usar ahí (boca, HUD y rebote de pelotas se corren hacia arriba) para que nadie tenga
+// motivo de tocar esa zona mientras juega. Solo en iOS; en otras plataformas no aplica.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+              (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const bottomInset = () => isIOS ? CFG.margenInferiorIOS * minDim : 0;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// pisoEnCero es un piso de VISUALIZACIÓN sobre el total acumulado (scoreTotal), no un tope que se
+// aplica evento por evento — el número real puede quedar negativo internamente (una racha mala
+// dentro de una ronda) y recuperarse solo con futuros aciertos.
+const dispTotal = raw => CFG.pisoEnCero ? Math.max(0, raw) : raw;
+
+function hexToRgb(h) {
+  h = String(h || "#888").replace("#", "");
+  if (h.length === 3) h = h.split("").map(x => x + x).join("");
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+const mix = (h, t, a) => { const c = hexToRgb(h); return `rgb(${c.map(v => Math.round(v + (t - v) * a)).join(",")})`; };
+const lighten = (h, a) => mix(h, 255, a);
+const darken = (h, a) => mix(h, 0, a);
+const hexA = (h, a) => { const c = hexToRgb(h); return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
+const blendHex = (h1, h2, a) => {
+  const c1 = hexToRgb(h1), c2 = hexToRgb(h2);
+  return "#" + c1.map((v, i) => Math.round(v + (c2[i] - v) * a).toString(16).padStart(2, "0")).join("");
+};
+// La dorada no tiene un color fijo (chocaba con el amarillo de la paleta de jugadores): recorre y
+// mezcla los colores de los jugadores en mesa, para que nunca se lea como "el color de alguien".
+function doradaSourceColors() {
+  const cols = players.filter(p => p.playing && p.color).map(p => p.color);
+  return cols.length ? cols : CFG.paleta;
+}
+function doradaCycleColor(tMs) {
+  const cols = doradaSourceColors(), period = 380, n = cols.length;
+  const pos = (tMs / period) % n, idx = Math.floor(pos), frac = pos - idx;
+  return blendHex(cols[idx], cols[(idx + 1) % n], frac);
+}
+
+// ---------------- Estado ----------------
+// Sin "activo/inactivo": el juego arranca directo en la pantalla de configuración de jugadores,
+// listo para jugarse — no hay un segundo dispositivo que necesite esperar una señal de arranque.
+let phase = "config";      // config | ready | countdown | playing | summary | ended
+let round = 1;
+let numRondas = CFG.numRondas, pelotasIniciales = CFG.pelotasIniciales,
+    neutralesInicial = CFG.neutralesInicial, aumentoPorRonda = CFG.aumentoPorRonda;
+let players = mkPlayers();
+let balls = [];
+let bursts = [];
+let tRemaining = 0, countdownT = 0, summaryT = 0;
+let blinkPhase = 0, specialAcc = 0;
+let lastCountdownBeep = -1, lastTickCycle = -1;
+let roundNet = [0, 0, 0, 0];
+let tally = mkTally();
+let gamePaused = false; // true mientras el modal de Ajustes está abierto: congela el juego
+const pointers = new Map();
+
+function mkPlayers() {
+  return [0, 1, 2, 3].map(side => ({
+    side, joined: false, playing: false, ready: false,
+    name: "", color: null, scoreTotal: 0, scoreRound: 0
+  }));
+}
+function mkTally() {
+  return [0, 1, 2, 3].map(() => ({ own: 0, others: {}, neutral: 0, comodin: 0, dorada: 0, negra: 0 }));
+}
+const playingSides = () => players.filter(p => p.playing);
+
+// ---------------- Persistencia local (sobrevive a un refresh accidental) ----------------
+// Solo se guarda en fases "seguras" (sin física en curso): si el refresh ocurre a mitad de una
+// ronda, se retoma en "ready" para esa misma ronda (con el marcador de rondas ya completadas
+// intacto) en vez de tratar de reconstruir la física exacta de las pelotas.
+function saveLocal() {
+  try {
+    const savedPhase = (phase === "playing" || phase === "countdown") ? "ready" : phase;
+    localStorage.setItem("colorChaos_state", JSON.stringify({
+      CFG, phase: savedPhase, round, players, tally, roundNet
+    }));
+  } catch {}
+}
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem("colorChaos_state");
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (!s) return;
+    applyCFG(s.CFG || {});
+    phase = s.phase || "config";
+    round = s.round || 1;
+    players = Array.isArray(s.players) ? s.players : mkPlayers();
+    tally = Array.isArray(s.tally) ? s.tally : mkTally();
+    roundNet = Array.isArray(s.roundNet) ? s.roundNet : [0, 0, 0, 0];
+  } catch {}
+}
+function applyCFG(partial) {
+  CFG = Object.assign({}, CFG_BASE, partial || {});
+  numRondas = CFG.numRondas; pelotasIniciales = CFG.pelotasIniciales;
+  neutralesInicial = CFG.neutralesInicial; aumentoPorRonda = CFG.aumentoPorRonda;
+}
+
+// ---------------- Transiciones ----------------
+function tryReady() {
+  const ps = playingSides();
+  if (ps.length >= 2 && ps.every(p => p.ready)) enterReady();
+  else updateOverlay();
+}
+function enterReady() {
+  phase = "ready";
+  updateOverlay();
+}
+function startRound() {
+  initAudio();
+  phase = "countdown"; countdownT = 3; tRemaining = CFG.duracion;
+  lastCountdownBeep = -1;
+  updateOverlay();
+}
+function beginPlaying() {
+  phase = "playing";
+  tRemaining = CFG.duracion; blinkPhase = 0; specialAcc = 0; lastTickCycle = -1;
+  playGoSound();
+  tally = mkTally();
+  players.forEach(p => p.scoreRound = 0);
+  // Colchón contra negativos: se aplica una sola vez, al arrancar la ronda 1 (no en cada ronda).
+  if (round === 1 && CFG.puntajeInicial) playingSides().forEach(p => p.scoreTotal = (p.scoreTotal || 0) + CFG.puntajeInicial);
+  spawnInitialBalls();
+  updateOverlay();
+}
+function endRound() {
+  roundNet = players.map(p => p.scoreRound || 0);
+  players.forEach(p => { p.scoreTotal = (p.scoreTotal || 0) + (p.scoreRound || 0); p.scoreRound = 0; });
+  balls = [];
+  phase = "summary"; summaryT = 15;
+  playEndSound();
+  updateOverlay();
+}
+function afterSummary() {
+  if (round < numRondas) { round++; phase = "ready"; }
+  else { phase = "ended"; }
+  updateOverlay();
+}
+// Reinicio rápido (botón de la esquina): vuelve a la pantalla de configuración manteniendo CFG.
+function reiniciarRapido() {
+  players = mkPlayers(); round = 1; balls = []; bursts = []; tally = mkTally();
+  phase = "config";
+  updateOverlay();
+}
+
+// ---------------- Pelotas ----------------
+function makeBall(kind, color) {
+  const sp = SPEED(), a = Math.random() * Math.PI * 2;
+  return {
+    kind, color,
+    x: W * (0.30 + Math.random() * 0.40), y: H * (0.30 + Math.random() * 0.40),
+    vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, held: false, dragVX: 0, dragVY: 0
+  };
+}
+const colorBall = c => makeBall("color", c);
+const neutralBall = () => makeBall("neutral", CFG.colorNeutral);
+function specialBall(kind) {
+  const col = kind === "comodin" ? CFG.colorComodin : kind === "dorada" ? CFG.colorDorada : CFG.colorNegra;
+  return makeBall(kind, col);
+}
+function spawnInitialBalls() {
+  balls = [];
+  const ps = playingSides();
+  const factor = Math.pow(1 + aumentoPorRonda / 100, round - 1);
+  const nColor = Math.max(ps.length, Math.round(pelotasIniciales * factor));
+  const nNeutral = CFG.usarNeutrales ? Math.round(neutralesInicial * factor) : 0;
+  for (let k = 0; k < nColor; k++) balls.push(colorBall(ps[k % ps.length].color));
+  for (let k = 0; k < nNeutral; k++) balls.push(neutralBall());
+}
+function respawnPositive() {
+  if (CFG.maxPelotas > 0 && balls.length >= CFG.maxPelotas) return;
+  playingSides().forEach(p => balls.push(colorBall(p.color)));
+  if (CFG.usarNeutrales) balls.push(neutralBall());
+}
+function trySpawnSpecial() {
+  if (CFG.maxPelotas > 0 && balls.length >= CFG.maxPelotas) return;
+  const cnt = { comodin: 0, dorada: 0, negra: 0 };
+  balls.forEach(b => { if (cnt[b.kind] != null) cnt[b.kind]++; });
+  const pool = [];
+  if (CFG.usarComodin && cnt.comodin < CFG.maxComodines) for (let i = 0; i < CFG.pesoComodin; i++) pool.push("comodin");
+  if (CFG.usarDorada && cnt.dorada < CFG.maxDoradas) for (let i = 0; i < CFG.pesoDorada; i++) pool.push("dorada");
+  if (CFG.usarNegra && cnt.negra < CFG.maxNegras) for (let i = 0; i < CFG.pesoNegra; i++) pool.push("negra");
+  if (pool.length) balls.push(specialBall(pool[Math.floor(Math.random() * pool.length)]));
+}
+
+function bocaPx(side) {
+  const b = (CFG.bocaAnchoInicial + (round - 1) * CFG.bocaCrecimiento) * minDim;
+  const edge = (side % 2 === 0) ? W : H;
+  return Math.max(minDim * 0.05, Math.min(b, edge - 4 * R()));
+}
+function inBay(b, side) {
+  const a = bocaPx(side) / 2, depth = CFG.bahiaProfundidad * minDim;
+  let lx, ly;
+  if (side === 0) { lx = b.x - W / 2; ly = b.y; }
+  else if (side === 2) { lx = b.x - W / 2; ly = (H - bottomInset()) - b.y; }
+  else if (side === 1) { lx = b.y - H / 2; ly = W - b.x; }
+  else { lx = b.y - H / 2; ly = b.x; }
+  return ly >= 0 && (lx * lx) / (a * a) + (ly * ly) / (depth * depth) <= 1;
+}
+
+function consume(i, side) {
+  const b = balls[i], p = players[side], t = tally[side];
+  let delta = 0;
+  if (b.kind === "color") {
+    if (b.color === p.color) { delta = 1; t.own++; }
+    else {
+      delta = -1;
+      const owner = players.find(q => q.playing && q.color === b.color);
+      const key = owner ? owner.side : "x";
+      t.others[key] = (t.others[key] || 0) + 1;
+    }
+  } else if (b.kind === "neutral") { delta = CFG.neutralValor; t.neutral++; }
+  else if (b.kind === "comodin") { delta = CFG.comodinValor; t.comodin++; }
+  else if (b.kind === "dorada") { delta = CFG.doradaValor; t.dorada++; }
+  else { delta = -CFG.negraValor; t.negra++; }
+
+  p.scoreRound = (p.scoreRound || 0) + delta;
+  playScoreSound(delta > 0);
+  spawnBurst(side, b.kind);
+  for (const ptr of pointers.values()) if (ptr.ball === b) ptr.ball = null;
+  balls.splice(i, 1);
+  if (delta > 0) respawnPositive();
+  // Una pelota de color que cae en una bahía ajena no dispara el respawn "positivo" (que crece
+  // el tablero), pero si nadie la repone, ese color puede terminar agotado en la mesa. Se
+  // regenera SOLO la que acaba de entrar (una, no las cuatro).
+  else if (b.kind === "color" && (CFG.maxPelotas <= 0 || balls.length < CFG.maxPelotas)) {
+    balls.push(colorBall(b.color));
+  }
+}
+
+// ---------------- Física ----------------
+function step(dt) {
+  const r = R();
+  const vmax = CFG.velocidadMax * minDim, vmin = CFG.velocidadMin * minDim;
+
+  // mover pelotas sostenidas hacia su dedo; su "velocidad de arrastre" alimenta los choques
+  for (const ptr of pointers.values()) {
+    if (!ptr.ball) continue;
+    const b = ptr.ball;
+    const ox = b.x, oy = b.y;
+    const dx = ptr.x - b.x, dy = ptr.y - b.y, d = Math.hypot(dx, dy) || 1;
+    const mv = Math.min(d, r * 0.9);
+    b.x += dx / d * mv; b.y += dy / d * mv;
+    let dvx = (b.x - ox) / dt, dvy = (b.y - oy) / dt;
+    const ds = Math.hypot(dvx, dvy);
+    if (ds > vmax) { dvx = dvx / ds * vmax; dvy = dvy / ds * vmax; }
+    b.dragVX = dvx; b.dragVY = dvy;
+  }
+  // integrar libres
+  for (const b of balls) if (!b.held) { b.x += b.vx * dt; b.y += b.vy * dt; }
+
+  // consumo por bahías (cualquier pelota, sostenida o no)
+  const ps = playingSides();
+  for (let i = balls.length - 1; i >= 0; i--) {
+    for (const p of ps) { if (inBay(balls[i], p.side)) { consume(i, p.side); break; } }
+  }
+  // pelota–pelota
+  for (let i = 0; i < balls.length; i++) {
+    for (let j = i + 1; j < balls.length; j++) {
+      const a = balls[i], b = balls[j];
+      let dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy);
+      const min = r * 2;
+      if (dist === 0) { dx = 1; dy = 0; dist = 0.01; }
+      if (dist < min) {
+        const nx = dx / dist, ny = dy / dist, overlap = min - dist;
+        if (a.held && b.held) { /* nada */ }
+        else if (a.held) { b.x += nx * overlap; b.y += ny * overlap; }
+        else if (b.held) { a.x -= nx * overlap; a.y -= ny * overlap; }
+        else { a.x -= nx * overlap / 2; a.y -= ny * overlap / 2; b.x += nx * overlap / 2; b.y += ny * overlap / 2; }
+        const e = CFG.restitucion;
+        const aN = a.held ? ((a.dragVX || 0) * nx + (a.dragVY || 0) * ny) : (a.vx * nx + a.vy * ny);
+        const bN = b.held ? ((b.dragVX || 0) * nx + (b.dragVY || 0) * ny) : (b.vx * nx + b.vy * ny);
+        if (a.held && b.held) {
+          // nada
+        } else if (a.held) {
+          // choque contra masa "infinita" que se mueve a la velocidad del arrastre
+          const bNew = (1 + e) * aN - e * bN;
+          b.vx += (bNew - bN) * nx; b.vy += (bNew - bN) * ny;
+        } else if (b.held) {
+          const aNew = (1 + e) * bN - e * aN;
+          a.vx += (aNew - aN) * nx; a.vy += (aNew - aN) * ny;
+        } else {
+          // masas iguales: intercambian la componente normal (con restitución)
+          const imp = (aN - bN) * e;
+          a.vx -= imp * nx; a.vy -= imp * ny;
+          b.vx += imp * nx; b.vy += imp * ny;
+        }
+      }
+    }
+  }
+  // paredes (el piso se acorta en iOS: franja reservada abajo, ver bottomInset())
+  const floorY = H - bottomInset();
+  for (const b of balls) {
+    if (b.held) { b.x = Math.max(r, Math.min(W - r, b.x)); b.y = Math.max(r, Math.min(floorY - r, b.y)); continue; }
+    if (b.x < r) { b.x = r; b.vx = Math.abs(b.vx) * CFG.restitucion; }
+    if (b.x > W - r) { b.x = W - r; b.vx = -Math.abs(b.vx) * CFG.restitucion; }
+    if (b.y < r) { b.y = r; b.vy = Math.abs(b.vy) * CFG.restitucion; }
+    if (b.y > floorY - r) { b.y = floorY - r; b.vy = -Math.abs(b.vy) * CFG.restitucion; }
+  }
+  // sin fricción: solo se acota la rapidez entre vmin y vmax (mantiene movimiento perpetuo)
+  for (const b of balls) {
+    if (b.held) continue;
+    let s = Math.hypot(b.vx, b.vy);
+    if (s < 1e-4) { const a = Math.random() * Math.PI * 2; b.vx = Math.cos(a) * vmin; b.vy = Math.sin(a) * vmin; s = vmin; }
+    if (s < vmin) { b.vx = b.vx / s * vmin; b.vy = b.vy / s * vmin; }
+    else if (s > vmax) { b.vx = b.vx / s * vmax; b.vy = b.vy / s * vmax; }
+  }
+  // especiales por temporizador
+  specialAcc += dt;
+  if (specialAcc >= CFG.intervaloEspecial) { specialAcc = 0; trySpawnSpecial(); }
+}
+
+// ---------------- Ráfagas (calaveras / estrellas) ----------------
+function spawnBurst(side, kind) {
+  let glyph = null, n = 0;
+  if (kind === "negra") { glyph = "💀"; n = CFG.calaverasNegra; }
+  else if (kind === "dorada") { glyph = "⭐"; n = CFG.estrellasDorada; }
+  else if (kind === "comodin") { glyph = "⭐"; n = CFG.estrellasComodin; }
+  if (!glyph || n <= 0) return;
+  const depth = CFG.bahiaProfundidad * minDim;
+  let ox, oy, nx, ny;
+  if (side === 0) { ox = W / 2; oy = depth * 0.3; nx = 0; ny = 1; }
+  else if (side === 2) { ox = W / 2; oy = H - depth * 0.3; nx = 0; ny = -1; }
+  else if (side === 1) { ox = W - depth * 0.3; oy = H / 2; nx = -1; ny = 0; }
+  else { ox = depth * 0.3; oy = H / 2; nx = 1; ny = 0; }
+  const base = Math.atan2(ny, nx);
+  for (let i = 0; i < n; i++) {
+    const ang = base + (Math.random() - 0.5) * 1.4;
+    const spd = minDim * (0.12 + Math.random() * 0.10);
+    bursts.push({ x: ox, y: oy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, life: 1.3, max: 1.3, glyph, rot: Math.random() * 6.28 });
+  }
+}
+function updateBursts(dt) {
+  for (const p of bursts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; p.life -= dt; p.rot += dt * 3; }
+  bursts = bursts.filter(p => p.life > 0);
+}
+
+// ---------------- Render ----------------
+// Se pierde entre tantas pelotas si solo brilla del mismo tono que puede tocarle a un jugador —
+// un halo que se desvanece a transparente la distingue sin importar el color. Compartido entre el
+// canvas real (drawBall) y los mini-canvas de demo/resumen (drawBallAt) para que se vea igual.
+function drawDoradaHalo(c, x, y, r, col) {
+  const glowT = 1.1 + 0.6 * Math.sin(now() / 160);
+  const rHalo = r * 2.2 * (0.85 + 0.15 * glowT);
+  const halo = c.createRadialGradient(x, y, 0, x, y, rHalo);
+  halo.addColorStop(0, hexA(col, 0.55));
+  halo.addColorStop(1, hexA(col, 0));
+  c.beginPath(); c.arc(x, y, rHalo, 0, 7);
+  c.fillStyle = halo; c.fill();
+  return glowT;
+}
+function drawBall(b) {
+  const r = R();
+  const col = b.kind === "dorada" ? doradaCycleColor(now()) : b.color;
+  if (b.kind === "dorada") drawDoradaHalo(ctx, b.x, b.y, r, col);
+  const g = ctx.createRadialGradient(b.x - r * 0.35, b.y - r * 0.35, r * 0.1, b.x, b.y, r);
+  g.addColorStop(0, lighten(col, 0.55));
+  g.addColorStop(0.55, col);
+  g.addColorStop(1, darken(col, 0.35));
+  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 7);
+  if (b.kind === "dorada") { ctx.shadowColor = col; ctx.shadowBlur = r * (1.1 + 0.6 * Math.sin(now() / 160)); }
+  ctx.fillStyle = g; ctx.fill(); ctx.shadowBlur = 0;
+  if (b.kind === "negra") { ctx.lineWidth = Math.max(2, r * 0.18); ctx.strokeStyle = "#fff"; ctx.stroke(); }
+  if (b.kind === "comodin") {
+    const cols = CFG.paleta, n = cols.length;
+    ctx.lineWidth = Math.max(2, r * 0.24);
+    for (let i = 0; i < n; i++) {
+      ctx.beginPath(); ctx.arc(b.x, b.y, r * 0.96, i / n * 6.283, (i + 1) / n * 6.283);
+      ctx.strokeStyle = cols[i]; ctx.stroke();
+    }
+  }
+  if (b.held) { ctx.beginPath(); ctx.arc(b.x, b.y, r * 1.25, 0, 7); ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 2; ctx.stroke(); }
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+// Cada lado que juega: pared del color del jugador con un HUECO = la boca (media elipse hacia
+// el campo). La boca arranca angosta y crece cada ronda. Solo por ahí entran las pelotas.
+function drawBay(side) {
+  const p = players[side], a = bocaPx(side) / 2, depth = CFG.bahiaProfundidad * minDim;
+  const T = Math.max(5, R() * 0.7);
+  const floorY = H - bottomInset(); // en iOS, el lado inferior se corre hacia arriba
+  ctx.save();
+
+  // pared en dos tramos, con el hueco de la boca en medio
+  ctx.fillStyle = hexA(p.color, 0.92);
+  if (side === 0 || side === 2) {
+    const y = side === 0 ? 0 : floorY - T, cx = W / 2;
+    ctx.fillRect(0, y, cx - a, T);
+    ctx.fillRect(cx + a, y, W - (cx + a), T);
+  } else {
+    const x = side === 1 ? W - T : 0, cy = H / 2;
+    ctx.fillRect(x, 0, T, cy - a);
+    ctx.fillRect(x, cy + a, T, H - (cy + a));
+  }
+
+  // la boca: relleno + borde brillante + glow, para que se vea la abertura
+  ctx.beginPath();
+  if (side === 0) ctx.ellipse(W / 2, 0, a, depth, 0, 0, Math.PI);
+  else if (side === 2) ctx.ellipse(W / 2, floorY, a, depth, 0, Math.PI, 2 * Math.PI);
+  else if (side === 1) ctx.ellipse(W, H / 2, depth, a, 0, Math.PI / 2, 3 * Math.PI / 2);
+  else ctx.ellipse(0, H / 2, depth, a, 0, -Math.PI / 2, Math.PI / 2);
+  ctx.fillStyle = hexA(p.color, 0.20); ctx.fill();
+  ctx.shadowColor = p.color; ctx.shadowBlur = minDim * 0.02;
+  ctx.strokeStyle = p.color; ctx.lineWidth = Math.max(3, minDim * 0.006);
+  ctx.stroke();
+  ctx.restore();
+}
+function drawBayHUD(side) {
+  const p = players[side], depth = CFG.bahiaProfundidad * minDim;
+  const F = Math.max(15, minDim * 0.038);
+  const showTimer = (phase === "playing" || phase === "countdown");
+  const pad = depth + F * (showTimer ? 2.6 : 1.9);
+  let ax, ay, rot;
+  if (side === 0) { ax = W / 2; ay = pad; rot = Math.PI; }
+  else if (side === 2) { ax = W / 2; ay = (H - bottomInset()) - pad; rot = 0; }
+  else if (side === 1) { ax = W - pad; ay = H / 2; rot = -Math.PI / 2; }
+  else { ax = pad; ay = H / 2; rot = Math.PI / 2; }
+
+  ctx.save(); ctx.translate(ax, ay); ctx.rotate(rot);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const wChip = F * 6.6, hChip = showTimer ? F * 3.6 : F * 2.5;
+  ctx.fillStyle = "rgba(8,11,17,0.72)"; roundRect(-wChip / 2, -hChip / 2, wChip, hChip, F * 0.4); ctx.fill();
+
+  ctx.fillStyle = p.color; ctx.font = `700 ${F * 0.6}px system-ui, sans-serif`;
+  ctx.fillText(p.name || ("Jugador " + (side + 1)), 0, -hChip / 2 + F * 0.55);
+  const sr = p.scoreRound || 0;
+  ctx.fillStyle = "#fff"; ctx.font = `800 ${F * 1.45}px system-ui, sans-serif`;
+  ctx.fillText((sr < 0 ? "−" : "") + Math.abs(sr), 0, showTimer ? -F * 0.05 : F * 0.2);
+  if (showTimer) {
+    ctx.fillStyle = tRemaining <= CFG.parpadeoDesde ? "#ff8f7a" : "rgba(255,255,255,0.85)";
+    ctx.font = `800 ${F * 0.95}px ui-monospace, monospace`;
+    ctx.fillText("⏱ " + Math.max(0, Math.ceil(tRemaining)), 0, hChip / 2 - F * 0.7);
+  }
+  ctx.restore();
+}
+function drawCenter(big, sub) {
+  ctx.save(); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#fff"; ctx.font = `800 ${minDim * 0.16}px system-ui, sans-serif`;
+  ctx.fillText(big, W / 2, H / 2 - minDim * 0.02);
+  if (sub) { ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.font = `600 ${minDim * 0.035}px system-ui, sans-serif`; ctx.fillText(sub, W / 2, H / 2 + minDim * 0.09); }
+  ctx.restore();
+}
+// Cronómetro central de ronda: pastel radial que se vacía en sentido horario desde las 12.
+// Sin texto (a diferencia de un número, se lee igual sin importar desde qué lado de la mesa se
+// mire); el segundo exacto ya lo muestra el HUD de cada bahía, orientado hacia su jugador.
+function drawRoundTimer() {
+  const frac = CFG.duracion > 0 ? Math.max(0, Math.min(1, tRemaining / CFG.duracion)) : 0;
+  const urgent = tRemaining <= CFG.parpadeoDesde;
+  const alpha = 1 - Math.max(0, Math.min(0.95, CFG.cronometroTransparencia));
+  const R = minDim * 0.13;
+  ctx.save(); ctx.translate(W / 2, H / 2);
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fill();
+  if (frac > 0) {
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.arc(0, 0, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+    ctx.closePath();
+    ctx.fillStyle = urgent ? `rgba(255,120,100,${alpha})` : `rgba(255,255,255,${alpha})`;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+// Conteo 3-2-1 gráfico: 3 luces que empiezan encendidas y se apagan una a una (de izquierda a
+// derecha) conforme baja countdownT — sin texto, mismo espíritu que el resto de la UI.
+function drawCountdownLights(shown) {
+  const n = 3, R = minDim * 0.045, gap = R * 2.7;
+  ctx.save(); ctx.translate(W / 2 - gap, H / 2);
+  for (let i = 0; i < n; i++) {
+    const lit = i >= (n - shown);
+    ctx.beginPath(); ctx.arc(i * gap, 0, R, 0, Math.PI * 2);
+    if (lit) {
+      ctx.shadowColor = CFG.colorCuentaRegresiva; ctx.shadowBlur = R * 1.4;
+      ctx.fillStyle = CFG.colorCuentaRegresiva;
+    } else {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0; ctx.lineWidth = Math.max(2, R * 0.15);
+    ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#0b0e14"; ctx.fillRect(0, 0, W, H);
+  // marco
+  ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.lineWidth = 2; ctx.strokeRect(1, 1, W - 2, (H - bottomInset()) - 2);
+
+  if (phase === "playing" || phase === "countdown" || phase === "summary" || phase === "ended") {
+    playingSides().forEach(p => drawBay(p.side));
+  }
+  for (const b of balls) drawBall(b);
+  // ráfagas
+  ctx.save(); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const p of bursts) {
+    ctx.globalAlpha = Math.max(0, p.life / p.max);
+    ctx.font = `${minDim * 0.05}px system-ui, sans-serif`;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillText(p.glyph, 0, 0); ctx.restore();
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+
+  if (phase === "playing" || phase === "countdown" || phase === "summary" || phase === "ended") {
+    playingSides().forEach(p => drawBayHUD(p.side));
+  }
+  if (phase === "playing") drawRoundTimer();
+  if (phase === "countdown") drawCountdownLights(Math.max(1, Math.ceil(countdownT)));
+  if (phase === "summary") {
+    ctx.save(); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff"; ctx.font = `800 ${minDim * 0.05}px system-ui, sans-serif`;
+    ctx.fillText("📊 " + round + "/" + numRondas, W / 2, H / 2 - minDim * 0.03);
+    ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.font = `600 ${minDim * 0.03}px system-ui, sans-serif`;
+    ctx.fillText((round < numRondas ? "⏭ " : "🏁 ") + Math.max(0, Math.ceil(summaryT)), W / 2, H / 2 + minDim * 0.02);
+    ctx.restore();
+  }
+  if (phase === "ended") {
+    const ps = playingSides().slice().sort((a, b) => (b.scoreTotal || 0) - (a.scoreTotal || 0));
+    const top = ps[0]; const tie = ps.length > 1 && (ps[1].scoreTotal || 0) === (top.scoreTotal || 0);
+    drawCenter(tie ? "🤝" : "🏆 " + (top.name || "Jugador " + (top.side + 1)), tie ? "" : String(dispTotal(top.scoreTotal || 0)));
+  }
+
+  // parpadeo del área en los últimos segundos
+  if (phase === "playing" && tRemaining <= CFG.parpadeoDesde) {
+    const a = 0.12 * (0.5 + 0.5 * Math.sin(blinkPhase));
+    ctx.fillStyle = `rgba(229,85,61,${a})`; ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ---------------- Loop ----------------
+let last = now();
+function loop() {
+  const t = now(); let dt = (t - last) / 1000; last = t;
+  dt = Math.max(0, Math.min(dt, 1 / 30));
+
+  if (!gamePaused) {
+    if (phase === "countdown") {
+      const shown = Math.max(1, Math.ceil(countdownT));
+      if (shown !== lastCountdownBeep) { lastCountdownBeep = shown; playCountdownBeep(); }
+      countdownT -= dt; if (countdownT <= 0) beginPlaying();
+    }
+    else if (phase === "playing") {
+      step(dt); updateBursts(dt);
+      tRemaining -= dt;
+      if (tRemaining <= CFG.parpadeoDesde) {
+        const frac = 1 - Math.max(0, tRemaining) / CFG.parpadeoDesde;
+        const hz = CFG.parpadeoHzInicial + (CFG.parpadeoHzFinal - CFG.parpadeoHzInicial) * frac;
+        blinkPhase += dt * hz * Math.PI * 2;
+        const cycle = Math.floor(blinkPhase / (Math.PI * 2));
+        if (cycle !== lastTickCycle) { lastTickCycle = cycle; playWarnTick(); }
+      }
+      if (tRemaining <= 0) endRound();
+    } else if (phase === "summary") { updateBursts(dt); summaryT -= dt; if (summaryT <= 0) afterSummary(); }
+    else if (phase === "config") { demoT += dt; paintAllDemos(); }
+    else updateBursts(dt);
+  }
+
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ---------------- Entrada táctil ----------------
+// user-scalable=no en el <meta viewport> no basta: iOS moderno lo ignora para un pinch real (dos
+// dedos, incluso de personas distintas jalando pelotas al mismo tiempo). gesturestart/gesturechange
+// son eventos propios de Safari para ese gesto; el touchmove con 2+ dedos es el respaldo general.
+document.addEventListener("gesturestart", e => e.preventDefault());
+document.addEventListener("gesturechange", e => e.preventDefault());
+document.addEventListener("touchmove", e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
+function toXY(e) { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+canvas.addEventListener("pointerdown", e => {
+  if (phase !== "playing" || gamePaused) return;
+  const { x, y } = toXY(e); const grab = R() + CFG.margenAgarre * minDim;
+  let best = null, bd = grab;
+  for (const b of balls) { if (b.held) continue; const d = Math.hypot(b.x - x, b.y - y); if (d < bd) { bd = d; best = b; } }
+  if (!best) return;
+  best.held = true; best.dragVX = 0; best.dragVY = 0;
+  pointers.set(e.pointerId, { ball: best, x, y, lastX: x, lastY: y });
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+});
+canvas.addEventListener("pointermove", e => {
+  const p = pointers.get(e.pointerId); if (!p) return;
+  const { x, y } = toXY(e); p.lastX = p.x; p.lastY = p.y; p.x = x; p.y = y;
+});
+function release(e) {
+  const p = pointers.get(e.pointerId); if (!p) return;
+  const b = p.ball;
+  if (b) {
+    b.held = false;
+    const vmax = CFG.velocidadMax * minDim, vmin = CFG.velocidadMin * minDim, base = SPEED();
+    let vx = b.dragVX || 0, vy = b.dragVY || 0;
+    let s = Math.hypot(vx, vy);
+    if (s < vmin) {
+      // arrastre lento o quieto: sale a la velocidad base en la última dirección del dedo
+      let dx = p.x - p.lastX, dy = p.y - p.lastY, dd = Math.hypot(dx, dy);
+      if (dd < 1) { const a = Math.random() * Math.PI * 2; dx = Math.cos(a); dy = Math.sin(a); dd = 1; }
+      vx = dx / dd * base; vy = dy / dd * base;
+    } else if (s > vmax) { vx = vx / s * vmax; vy = vy / s * vmax; }
+    b.vx = vx; b.vy = vy; b.dragVX = 0; b.dragVY = 0;
+  }
+  pointers.delete(e.pointerId);
+}
+canvas.addEventListener("pointerup", release);
+canvas.addEventListener("pointercancel", release);
+
+// ---------------- Overlay DOM ----------------
+const overlay = document.getElementById("overlay");
+const SIDECLASS = ["at-top", "at-right", "at-bottom", "at-left"];
+
+// ---------------- Botón de reiniciar (rápido, icono) ----------------
+const resetBtn = document.getElementById("resetBtn");
+const resetModal = document.getElementById("resetModal");
+resetBtn.onclick = () => resetModal.classList.remove("hidden");
+document.getElementById("resetCancel").onclick = () => resetModal.classList.add("hidden");
+document.getElementById("resetConfirm").onclick = () => { resetModal.classList.add("hidden"); reiniciarRapido(); };
+
+// Logo Alsis: grande/opaco/clicable salvo durante countdown+playing (chico/tenue/no clicable).
+const logoLink = document.getElementById("logoLink");
+const logoImg = document.getElementById("logoImg");
+let logoInGame = null; // cache: solo tocar el DOM cuando de verdad cambia
+function updateLogo() {
+  const inGame = (phase === "countdown" || phase === "playing");
+  if (inGame === logoInGame) return;
+  logoInGame = inGame;
+  logoLink.classList.toggle("ingame", inGame);
+  logoImg.src = inGame ? LOGO_A_SRC : LOGO_FULL_SRC;
+  if (inGame) { logoLink.removeAttribute("href"); logoLink.tabIndex = -1; }
+  else { logoLink.setAttribute("href", "https://alsis.com.mx"); logoLink.removeAttribute("tabindex"); }
+}
+
+function updateOverlay() {
+  saveLocal();
+  updateLogo();
+  if (phase === "config") return renderConfig();
+  if (phase === "ready") return renderReady();
+  if (phase === "summary") return renderSummary();
+  if (phase === "ended") {
+    overlay.innerHTML = `<div class="side-panel at-bottom" style="font-size:3rem">🏁</div>`;
+    return;
+  }
+  overlay.innerHTML = ""; // countdown / playing → todo en canvas
+}
+
+function renderConfig() {
+  overlay.innerHTML = players.map(p => {
+    const used = players.filter(q => q.playing && q.side !== p.side).map(q => q.color);
+    let inner;
+    if (!p.playing) {
+      inner = `<canvas class="demo-ico" data-side="${p.side}"></canvas>
+        <button class="btn btn-primary btn-join" data-act="join" data-side="${p.side}" aria-label="Unirse" title="Unirse">🙋</button>`;
+    } else {
+      const sw = CFG.paleta.map(c =>
+        `<div class="swatch ${p.color === c ? "sel" : ""} ${used.includes(c) ? "taken" : ""}"
+              data-act="color" data-side="${p.side}" data-color="${c}" style="background:${c}"></div>`).join("");
+      inner = `<canvas class="demo-ico" data-side="${p.side}"></canvas>
+        <input type="text" data-act="name" data-side="${p.side}" maxlength="16" placeholder="Tu nombre"
+               value="${esc(p.name)}" ${p.ready ? "disabled" : ""}>
+        <div class="swatches">${sw}</div>
+        <div class="row">
+          <button class="btn btn-icon ${p.ready ? "" : "btn-primary"}" data-act="ready" data-side="${p.side}" aria-label="${p.ready ? "Editar" : "Listo"}" title="${p.ready ? "Editar" : "Listo"}">${p.ready ? "✏️" : "✅"}</button>
+          <button class="btn btn-icon btn-danger" data-act="leave" data-side="${p.side}" aria-label="Salir" title="Salir">✖</button>
+        </div>`;
+    }
+    return `<div class="side-panel ${SIDECLASS[p.side]}" style="${p.color ? `border-color:${p.color}` : ""}">${inner}</div>`;
+  }).join("");
+  bindConfig();
+}
+function bindConfig() {
+  overlay.querySelectorAll("[data-act]").forEach(el => {
+    const side = +el.dataset.side, p = players[side], act = el.dataset.act;
+    if (act === "name") {
+      el.oninput = () => { p.name = el.value; saveLocal(); };
+      el.onfocus = () => { if (el.value === "Jugador " + (side + 1)) el.value = ""; };
+      el.onblur = () => {
+        if (!el.value) { el.value = "Jugador " + (side + 1); p.name = el.value; saveLocal(); }
+      };
+      return;
+    }
+    el.onclick = () => {
+      if (act === "join") {
+        const used = players.filter(q => q.playing).map(q => q.color);
+        p.playing = true; p.joined = true; p.ready = false;
+        // Preferir el color por defecto de ESTE lado (el mismo que ya mostraba la demo de config
+        // antes de unirse) — si ya lo tomó otro jugador, recién ahí cae al primero disponible.
+        const defaultColor = CFG.paleta[side % CFG.paleta.length];
+        p.color = !used.includes(defaultColor) ? defaultColor : (CFG.paleta.find(c => !used.includes(c)) || defaultColor);
+        if (!p.name) p.name = "Jugador " + (side + 1);
+      } else if (act === "leave") { p.playing = false; p.ready = false; p.color = null; }
+      else if (act === "color") {
+        const c = el.dataset.color;
+        if (!players.some(q => q.playing && q.side !== side && q.color === c)) p.color = c;
+      } else if (act === "ready") {
+        if (!p.color) return;
+        p.ready = !p.ready;
+      }
+      if (act === "ready" && p.ready) return tryReady();
+      renderConfig(); saveLocal();
+    };
+  });
+}
+function drawBallAt(c, x, y, r, kind, color) {
+  const col = kind === "neutral" ? CFG.colorNeutral : kind === "comodin" ? CFG.colorComodin
+            : kind === "dorada" ? doradaCycleColor(now()) : kind === "negra" ? CFG.colorNegra : (color || "#888");
+  let glowT;
+  if (kind === "dorada") glowT = drawDoradaHalo(c, x, y, r, col);
+  const g = c.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
+  g.addColorStop(0, lighten(col, 0.55)); g.addColorStop(0.55, col); g.addColorStop(1, darken(col, 0.35));
+  c.beginPath(); c.arc(x, y, r, 0, 7);
+  if (kind === "dorada") { c.shadowColor = col; c.shadowBlur = r * glowT; }
+  c.fillStyle = g; c.fill(); c.shadowBlur = 0;
+  if (kind === "negra") { c.lineWidth = Math.max(1.5, r * 0.2); c.strokeStyle = "#fff"; c.stroke(); }
+  if (kind === "comodin") {
+    const cols = CFG.paleta, n = cols.length; c.lineWidth = Math.max(1.5, r * 0.28);
+    for (let i = 0; i < n; i++) { c.beginPath(); c.arc(x, y, r * 0.9, i / n * 6.283, (i + 1) / n * 6.283); c.strokeStyle = cols[i]; c.stroke(); }
+  }
+}
+function paintBallIcon(cv, kind, color) {
+  const c = cv.getContext("2d");
+  const dpr = Math.min(2, window.devicePixelRatio || 1), S = 32;
+  cv.width = S * dpr; cv.height = S * dpr; cv.style.width = S + "px"; cv.style.height = S + "px";
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawBallAt(c, S / 2, S / 2, S / 2 - 2, kind, color);
+}
+
+// ---------------- Demo de reglas (solo durante "config") ----------------
+// Animación decorativa embebida en cada panel de config: boca + pelota entrando + puntuación,
+// recorriendo un ciclo fijo (propio +1, ajeno -1, comodín, neutral, dorada, negra) y reiniciando.
+let demoT = 0;
+const DEMO_FLY = 0.9, DEMO_HOLD = 0.6, DEMO_END_PAUSE = 1.2;
+function demoSteps() {
+  const steps = [
+    { kind: "color", sign: "own", delta: 1 },
+    { kind: "color", sign: "other", delta: -1 },
+  ];
+  if (CFG.usarComodin) steps.push({ kind: "comodin", delta: CFG.comodinValor });
+  if (CFG.usarNeutrales) steps.push({ kind: "neutral", delta: CFG.neutralValor });
+  if (CFG.usarDorada) steps.push({ kind: "dorada", delta: CFG.doradaValor });
+  if (CFG.usarNegra) steps.push({ kind: "negra", delta: -CFG.negraValor });
+  return steps;
+}
+function demoState(t) {
+  const steps = demoSteps(), dur = DEMO_FLY + DEMO_HOLD;
+  const cycle = steps.length * dur + DEMO_END_PAUSE;
+  let tt = ((t % cycle) + cycle) % cycle, active = -1, localT = 0;
+  for (let i = 0; i < steps.length; i++) {
+    if (tt < dur) { active = i; localT = tt; break; }
+    tt -= dur;
+  }
+  return { steps, active, localT };
+}
+function paintDemo(cv, side) {
+  const c = cv.getContext("2d");
+  const dpr = Math.min(2, window.devicePixelRatio || 1), Wc = 176, Hc = 60;
+  if (cv.width !== Math.round(Wc * dpr)) {
+    cv.width = Wc * dpr; cv.height = Hc * dpr; cv.style.width = Wc + "px"; cv.style.height = Hc + "px";
+  }
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, Wc, Hc);
+
+  const p = players[side];
+  const ownColor = (p.playing && p.color) ? p.color : CFG.paleta[side % CFG.paleta.length];
+  const taken = players.filter(q => q.playing).map(q => q.color).concat(ownColor);
+  const otherColor = CFG.paleta.find(x => !taken.includes(x)) || CFG.paleta[(side + 1) % CFG.paleta.length];
+
+  const st = demoState(demoT);
+  const stepIdx = st.active >= 0 ? st.active : st.steps.length - 1;
+  const step = st.steps[stepIdx];
+  const localT = st.active >= 0 ? st.localT : (DEMO_FLY + DEMO_HOLD);
+  const ballColor = step.kind === "color" ? (step.sign === "own" ? ownColor : otherColor) : null;
+
+  // pared con hueco = la boca (misma metáfora visual que en el juego real)
+  const cx = Wc / 2, wallY = Hc - 8, gapHalf = 20;
+  c.fillStyle = hexA(ownColor, 0.85);
+  c.fillRect(0, wallY - 3, cx - gapHalf, 6);
+  c.fillRect(cx + gapHalf, wallY - 3, Wc - (cx + gapHalf), 6);
+  c.beginPath(); c.ellipse(cx, wallY, gapHalf, 9, 0, 0, Math.PI);
+  c.fillStyle = hexA(ownColor, 0.18); c.fill();
+  c.strokeStyle = ownColor; c.lineWidth = 2; c.stroke();
+
+  if (localT < DEMO_FLY) {
+    // pelota volando hacia la boca
+    const frac = localT / DEMO_FLY;
+    drawBallAt(c, cx, 6 + frac * (wallY - 10), 8, step.kind, ballColor);
+  } else {
+    // recién llegó: la puntuación sale de la boca flotando y se desvanece
+    const frac = Math.min(1, (localT - DEMO_FLY) / DEMO_HOLD);
+    const label = (step.delta > 0 ? "+" : "−") + Math.abs(step.delta);
+    c.globalAlpha = 1 - frac;
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.font = "800 22px system-ui, sans-serif";
+    c.fillStyle = step.delta > 0 ? "#35c26a" : "#e5533d";
+    c.fillText(label, cx, wallY - 8 - frac * 26);
+    c.globalAlpha = 1;
+  }
+}
+function paintAllDemos() {
+  overlay.querySelectorAll("canvas.demo-ico").forEach(cv => paintDemo(cv, +cv.dataset.side));
+}
+function renderSummary() {
+  const iconsFor = p => {
+    const t = tally[p.side], out = [{ kind: "color", color: p.color, n: t.own, sign: "+" }];
+    players.filter(q => q.playing && q.side !== p.side).forEach(op => {
+      const n = t.others[op.side] || 0;
+      if (n) out.push({ kind: "color", color: op.color, n, sign: "−" });
+    });
+    if (t.neutral) out.push({ kind: "neutral", n: t.neutral, sign: CFG.neutralValor >= 0 ? "+" : "−" });
+    if (t.dorada) out.push({ kind: "dorada", n: t.dorada, sign: "+" });
+    if (t.comodin) out.push({ kind: "comodin", n: t.comodin, sign: "+" });
+    if (t.negra) out.push({ kind: "negra", n: t.negra, sign: "−" });
+    return out;
+  };
+  overlay.innerHTML = players.map(p => {
+    if (!p.playing) return "";
+    const net = roundNet[p.side] || 0;
+    const cells = iconsFor(p).map(it =>
+      `<div class="sum-item">
+         <canvas class="ball-ico" data-kind="${it.kind}" data-color="${it.color || ""}"></canvas>
+         <span class="${it.sign === "+" ? "pos" : "neg"}">${it.sign}${it.n}</span>
+       </div>`).join("");
+    return `<div class="side-panel ${SIDECLASS[p.side]}" style="border-color:${p.color}">
+      <div class="sum-name" style="color:${p.color}">${esc(p.name || ("Jugador " + (p.side + 1)))}</div>
+      <div class="sum-grid">${cells}</div>
+      <div class="sum-total"><span class="${net >= 0 ? "pos" : "neg"}">${net >= 0 ? "+" : "−"}${Math.abs(net)}</span> &nbsp;·&nbsp; Σ ${dispTotal(p.scoreTotal || 0)}</div>
+    </div>`;
+  }).join("");
+  overlay.querySelectorAll("canvas.ball-ico").forEach(cv => paintBallIcon(cv, cv.dataset.kind, cv.dataset.color));
+}
+function renderReady() {
+  overlay.innerHTML = players.map(p => {
+    if (!p.playing) return "";
+    return `<div class="side-panel ${SIDECLASS[p.side]}" style="border-color:${p.color}">
+      <h3 style="color:${p.color}">${esc(p.name || ("Jugador " + (p.side + 1)))}</h3>
+      <button class="btn btn-primary btn-lg" data-act="start" aria-label="Iniciar ronda ${round}">▶ ${round}</button>
+    </div>`;
+  }).join("");
+  overlay.querySelectorAll('[data-act="start"]').forEach(b => b.onclick = () => { if (phase === "ready") startRound(); });
+}
+
+// ---------------- Sonido ----------------
+let audioCtx = null;
+function initAudio() { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); } catch {} }
+
+let soundOn = true;
+try { soundOn = localStorage.getItem("colorChaos_sound") !== "off"; } catch {}
+const soundBtn = document.getElementById("soundBtn");
+function updateSoundBtn() {
+  soundBtn.textContent = soundOn ? "🔊" : "🔇";
+  soundBtn.setAttribute("aria-label", soundOn ? "Sonido activado" : "Sonido silenciado");
+}
+soundBtn.onclick = () => {
+  soundOn = !soundOn;
+  try { localStorage.setItem("colorChaos_sound", soundOn ? "on" : "off"); } catch {}
+  updateSoundBtn();
+};
+updateSoundBtn();
+
+// Un solo tono simple; el resto de los efectos son secuencias de llamadas a este helper.
+function playTone(freq, offset, dur, type, peak) {
+  if (!soundOn || !audioCtx) return;
+  const t0 = audioCtx.currentTime + offset;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+// Suma/resta puntos: un salto de dos notas hacia arriba o hacia abajo, sin distinguir tipo de
+// pelota (comodín/dorada suenan igual que un acierto propio; negra/neutral igual que ajeno).
+function playScoreSound(positive) {
+  const [f1, f2] = positive ? [523, 784] : [523, 349];
+  playTone(f1, 0,    0.09, "square", 0.16);
+  playTone(f2, 0.07, 0.10, "square", 0.16);
+}
+// Tic de advertencia — se llama una vez por ciclo de parpadeo (ver loop()), así la tensión sonora
+// crece junto con la visual (parpadeoHzInicial → parpadeoHzFinal).
+function playWarnTick() { playTone(1200, 0, 0.05, "square", 0.14); }
+// Beeper de cuenta regresiva: un beep por número (3, 2, 1) — ver loop() — y un tono distinto,
+// más largo y agudo, al arrancar la ronda.
+function playCountdownBeep() { playTone(660, 0, 0.12, "square", 0.22); }
+function playGoSound() { playTone(1320, 0, 0.25, "square", 0.26); }
+// Fin de ronda: alarma (pulsos repetidos al mismo tono).
+function playEndSound() {
+  [0, 0.18, 0.36, 0.54].forEach(dt => playTone(880, dt, 0.14, "sawtooth", 0.28));
+}
+
+// ---------------- Panel de Ajustes (antes admin.html, ahora modal local) ----------------
+const settingsBtn = document.getElementById("settingsBtn");
+const settingsModal = document.getElementById("settingsModal");
+
+function paramGroups() { return [...new Set([...PARAMS.map(p => p[5]), ...SLIDERS.map(p => p[6])])]; }
+
+// ---------------- Widgets "sin texto": íconos de bola + sliders ----------------
+function ballSwatchHtml(kind, px) {
+  return `<span class="ball-swatch k-${kind}"${px ? ` style="width:${px}px;height:${px}px"` : ""}></span>`;
+}
+function formatSliderVal(v, step, unit) {
+  const decimals = step < 1 ? (String(step).split(".")[1] || "").length : 0;
+  return Number(v).toFixed(decimals) + (unit || "");
+}
+// Trayectoria de rebote: línea punteada que cae y sube, con la bola al final (para "restitución").
+function bounceGlyphHtml() {
+  return `<svg viewBox="0 0 30 22" width="28" height="20" style="flex-shrink:0;display:block">
+    <path d="M2 2 L15 20 L28 5" fill="none" stroke="var(--text-dim)" stroke-width="1.5" stroke-dasharray="3,2"></path>
+    <circle cx="28" cy="5" r="3.5" fill="var(--accent)"></circle>
+  </svg>`;
+}
+// Pantalla con la franja inferior marcada (para "franja reservada en iOS").
+function screenBottomGlyphHtml() {
+  return `<svg viewBox="0 0 24 34" width="20" height="28" style="flex-shrink:0;display:block">
+    <rect x="2" y="2" width="20" height="30" rx="3" fill="none" stroke="var(--text-dim)" stroke-width="2"></rect>
+    <rect x="3" y="24" width="18" height="7" fill="var(--accent)" opacity="0.6"></rect>
+  </svg>`;
+}
+// El pastel del cronómetro central, a una opacidad fija (para ilustrar el slider de transparencia).
+function timerFadeGlyphHtml(size, alpha) {
+  const r = size / 2 - 2, cx = size / 2, cy = size / 2;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0;display:block">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(255,255,255,0.08)"></circle>
+    <path d="M ${cx} ${cy} L ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx} ${cy + r} Z" fill="rgba(255,255,255,${alpha})"></path>
+  </svg>`;
+}
+function sliderRowHtml([key, icon, mn, mx, st, unit]) {
+  const val = CFG[key];
+  let left = "", right = "", title = "";
+  if (icon === "size") { left = ballSwatchHtml("neutral", 10); right = ballSwatchHtml("neutral", 26); }
+  else if (icon === "clock") { left = `<span class="slider-icon-clock">⏱</span>`; }
+  else if (icon === "bounce") { left = bounceGlyphHtml(); title = "Rebote: qué tan elástico es el choque contra otra pelota"; }
+  else if (icon === "screenBottom") { left = screenBottomGlyphHtml(); title = "Franja reservada abajo en iOS: evita el gesto de salir de la app"; }
+  else if (icon === "timerFade") { left = timerFadeGlyphHtml(20, 0.01); right = timerFadeGlyphHtml(20, 0.9); title = "Transparencia del cronómetro central de ronda"; }
+  else if (icon === "rounds") { left = `<span class="slider-icon-clock">🚩</span>`; right = `<span class="slider-icon-clock">🏁</span>`; title = "Número de rondas de la sesión"; }
+  else if (icon === "cushion") { left = `<span class="slider-icon-clock">🪙</span>`; title = "Puntaje inicial: colchón de puntos con el que cada jugador arranca la ronda 1, para no caer en negativos por errores tempranos"; }
+  else if (icon === "specialTimer") { left = `<span class="slider-icon-clock">⏳</span>`; right = ballSwatchHtml("comodin", 22); title = "Cada cuántos segundos aparece una pelota especial"; }
+  else if (icon.startsWith("emoji:")) { left = `<span class="slider-icon-clock">${icon.slice(6)}</span>`; }
+  else if (icon.startsWith("ball:")) { left = ballSwatchHtml(icon.slice(5), 24); }
+  return `<div class="slider-row"${title ? ` title="${title}"` : ""}>
+    ${left}
+    <input type="range" id="s_${key}" min="${mn}" max="${mx}" step="${st}" value="${val}">
+    ${right}
+    <span class="slider-val" id="sv_${key}">${formatSliderVal(val, st, unit)}</span>
+  </div>`;
+}
+function bindSliderRow([key, , , , st, unit]) {
+  const input = document.getElementById("s_" + key), out = document.getElementById("sv_" + key);
+  if (input && out) input.oninput = () => { out.textContent = formatSliderVal(input.value, st, unit); };
+}
+
+// Bloque "Rapidez": min/max como textbox a los lados de un slider tortuga→liebre para la base.
+function formatPercent(v, step) {
+  // Valor ×100, sin el símbolo "%": los readouts del modal van sin unidades.
+  const scaled = v * 100, decimals = step * 100 < 1 ? 1 : 0;
+  return scaled.toFixed(decimals);
+}
+function speedRowHtml() {
+  const [mnMin, mxMin, stMin] = VELOCIDAD.velocidadMin, [mnV, mxV, stV] = VELOCIDAD.velocidad, [mnMax, mxMax, stMax] = VELOCIDAD.velocidadMax;
+  const min = CFG.velocidadMin, val = CFG.velocidad, max = CFG.velocidadMax;
+  return `<div class="speed-row">
+    ${ballSwatchHtml("verde", 24)}
+    <input type="number" id="p_velocidadMin" class="speed-box" min="${mnMin}" max="${mxMin}" step="${stMin}" value="${min}" title="Rapidez mínima (piso)">
+    <span class="speed-ineq">&gt;</span>
+    <span class="slider-icon-clock" title="Rapidez base al soltar/arrancar">🐢</span>
+    <input type="range" id="s_velocidad" min="${mnV}" max="${mxV}" step="${stV}" value="${val}">
+    <span class="slider-icon-clock">🐇</span>
+    <span class="speed-ineq">&lt;</span>
+    <input type="number" id="p_velocidadMax" class="speed-box" min="${mnMax}" max="${mxMax}" step="${stMax}" value="${max}" title="Rapidez máxima (tope)">
+  </div>`;
+}
+function bindSpeedRow() { /* sin readout propio: el valor vivo no se muestra, solo min/max en los textbox */ }
+
+// Grupo "Bola neutral": el checkbox es el ícono de la bola + un check (sin la palabra
+// "neutrales" en ningún lado), en el MISMO renglón que las 3 casillas -1/0/+1 (click mueve la
+// bola, no arrastre real). Abajo, un slider x1..x20 para la cantidad inicial.
+let curUsarNeutrales = true, curNeutralValor = -1, curNeutralesInicial = 4;
+let curPisoEnCero = false;
+function neutralBlockHtml() {
+  const cant = curNeutralesInicial;
+  const boxes = [-1, 0, 1].map(v => `
+    <div class="value-box${curNeutralValor === v ? " sel" : ""}" data-neutral-box="${v}">
+      <span class="value-box-label">${v > 0 ? "+" + v : v}</span>
+      ${curNeutralValor === v ? ballSwatchHtml("neutral", 22) : ""}
+    </div>`).join("");
+  return `
+    <div class="special-group">
+      <div class="neutral-row">
+        <button type="button" id="usarNeutralesBtn" class="ball-toggle" aria-label="Usar neutrales" aria-pressed="${curUsarNeutrales}">
+          ${ballSwatchHtml("neutral", 30)}
+          <span class="ball-toggle-check">${curUsarNeutrales ? "✅" : "▫️"}</span>
+        </button>
+        <div class="value-box-row${curUsarNeutrales ? "" : " hidden"}">${boxes}</div>
+      </div>
+      <div id="neutralExtra" class="${curUsarNeutrales ? "" : "hidden"}">
+        <div class="slider-row">
+          ${ballSwatchHtml("neutral", 22)}
+          <input type="range" id="s_neutralesInicial" min="1" max="20" step="1" value="${cant}" title="Cantidad de neutrales al iniciar la ronda">
+          <span class="slider-val" id="sv_neutralesInicial">×${cant}</span>
+        </div>
+      </div>
+    </div>`;
+}
+function bindNeutralBlock() {
+  document.getElementById("usarNeutralesBtn").onclick = () => {
+    curUsarNeutrales = !curUsarNeutrales;
+    document.getElementById("neutralBlock").innerHTML = neutralBlockHtml();
+    bindNeutralBlock();
+  };
+  document.querySelectorAll("[data-neutral-box]").forEach(box => {
+    box.onclick = () => {
+      curNeutralValor = parseInt(box.dataset.neutralBox, 10);
+      document.getElementById("neutralBlock").innerHTML = neutralBlockHtml();
+      bindNeutralBlock();
+    };
+  });
+  const neEl = document.getElementById("s_neutralesInicial"), neOut = document.getElementById("sv_neutralesInicial");
+  if (neEl && neOut) neEl.oninput = () => { curNeutralesInicial = parseInt(neEl.value, 10); neOut.textContent = "×" + neEl.value; };
+}
+
+// Bloque "Pelotas iniciales" (sesión): pelotasIniciales + aumentoPorRonda + maxPelotas, uno junto
+// al otro, icono+slider cada uno (sin checkbox — siempre hay pelotas de color en juego).
+function bolasSesionBlockHtml() {
+  const rows = [
+    ["pelotasIniciales", `<span title="Pelotas de color al iniciar la ronda">${ballSwatchHtml("neutral", 22)}</span>`],
+    ["aumentoPorRonda", `<span class="slider-icon-clock" title="% más pelotas de color por ronda (se acumula)">📈</span>`],
+    ["maxPelotas", `<span class="slider-icon-clock" title="Tope de pelotas en la mesa a la vez (0 = sin límite)">#️⃣</span>`]
+  ];
+  return `<div class="special-group">` + rows.map(([key, icon]) => {
+    const [mn, mx, st, unit] = BOLAS_SESION[key];
+    const val = CFG[key];
+    return `<div class="slider-row">${icon}
+      <input type="range" id="s_${key}" min="${mn}" max="${mx}" step="${st}" value="${val}">
+      <span class="slider-val" id="sv_${key}">${formatSliderVal(val, st, unit || "")}</span></div>`;
+  }).join("") + `</div>`;
+}
+function bindBolasSesionBlock() {
+  Object.keys(BOLAS_SESION).forEach(key => {
+    const [, , st, unit] = BOLAS_SESION[key];
+    const el = document.getElementById("s_" + key), out = document.getElementById("sv_" + key);
+    if (el && out) el.oninput = () => { out.textContent = formatSliderVal(el.value, st, unit || ""); };
+  });
+}
+
+// Bloque gráfico de la boca: figura (ancho horizontal + profundidad vertical, en vivo) + slider de
+// crecimiento por ronda con un par de íconos chico/grande de la misma figura.
+function bocaGlyphHtml(w, rx, ry) {
+  const h = Math.round(w * 0.6);
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="flex-shrink:0;display:block">
+    <rect x="0" y="${h * 0.35}" width="${w}" height="${Math.max(4, h * 0.4)}" fill="var(--accent)"></rect>
+    <ellipse cx="${w / 2}" cy="${h * 0.55}" rx="${rx}" ry="${ry}" fill="var(--panel-2)"></ellipse>
+  </svg>`;
+}
+function bocaBlockHtml() {
+  const [aMin, aMax, aSt] = BOCA.bocaAnchoInicial, [pMin, pMax, pSt] = BOCA.bahiaProfundidad, [cMin, cMax, cSt] = BOCA.bocaCrecimiento;
+  const ancho = CFG.bocaAnchoInicial, prof = CFG.bahiaProfundidad, crec = CFG.bocaCrecimiento;
+  return `
+    <div class="boca-widget">
+      <div class="boca-vcol">
+        <input type="range" class="boca-v-slider" id="s_bahiaProfundidad" min="${pMin}" max="${pMax}" step="${pSt}" value="${prof}" title="Profundidad: qué tanto entra la boca al campo de juego">
+        <span class="slider-val" id="sv_bahiaProfundidad">${formatSliderVal(prof, pSt, "")}</span>
+      </div>
+      <div class="boca-figure">
+        <svg id="bocaPreview" viewBox="0 0 140 60" width="140" height="60">
+          <rect x="0" y="26" width="140" height="18" fill="var(--accent)"></rect>
+          <ellipse cx="70" cy="35" rx="30" ry="14" fill="var(--panel-2)"></ellipse>
+        </svg>
+        <input type="range" class="boca-h-slider" id="s_bocaAnchoInicial" min="${aMin}" max="${aMax}" step="${aSt}" value="${ancho}" title="Ancho de la boca en la ronda 1">
+        <span class="slider-val" id="sv_bocaAnchoInicial">${formatSliderVal(ancho, aSt, "")}</span>
+      </div>
+    </div>
+    <div class="slider-row" title="Cuánto se ensancha la boca en cada ronda nueva (respecto a la anterior, sin tope)">
+      <span>${bocaGlyphHtml(26, 6, 4)}</span>
+      <span class="grow-arrow">→</span>
+      <span>${bocaGlyphHtml(34, 13, 6)}</span>
+      <input type="range" id="s_bocaCrecimiento" min="${cMin}" max="${cMax}" step="${cSt}" value="${crec}">
+      <span class="slider-val" id="sv_bocaCrecimiento">${formatPercent(crec, cSt)}</span>
+    </div>`;
+}
+function updateBocaPreview() {
+  const svg = document.getElementById("bocaPreview");
+  if (!svg) return;
+  const ell = svg.querySelector("ellipse");
+  const [aMin, aMax] = BOCA.bocaAnchoInicial, [pMin, pMax] = BOCA.bahiaProfundidad;
+  const ancho = parseFloat(document.getElementById("s_bocaAnchoInicial").value);
+  const prof = parseFloat(document.getElementById("s_bahiaProfundidad").value);
+  ell.setAttribute("rx", 10 + ((ancho - aMin) / (aMax - aMin)) * 55);
+  ell.setAttribute("ry", 6 + ((prof - pMin) / (pMax - pMin)) * 20);
+}
+function bindBocaBlock() {
+  const anchoEl = document.getElementById("s_bocaAnchoInicial"), anchoOut = document.getElementById("sv_bocaAnchoInicial");
+  const profEl = document.getElementById("s_bahiaProfundidad"), profOut = document.getElementById("sv_bahiaProfundidad");
+  const crecEl = document.getElementById("s_bocaCrecimiento"), crecOut = document.getElementById("sv_bocaCrecimiento");
+  anchoEl.oninput = () => { anchoOut.textContent = formatSliderVal(anchoEl.value, BOCA.bocaAnchoInicial[2], ""); updateBocaPreview(); };
+  profEl.oninput = () => { profOut.textContent = formatSliderVal(profEl.value, BOCA.bahiaProfundidad[2], ""); updateBocaPreview(); };
+  crecEl.oninput = () => { crecOut.textContent = formatPercent(crecEl.value, BOCA.bocaCrecimiento[2]); };
+}
+
+// Bloques de especiales (comodín/dorada/negra): checkbox "Usar X" (ícono de esa bola + check) y,
+// siempre visibles debajo (ocultos con CSS si está desmarcado, no removidos del DOM), 4
+// icono+slider: valor, peso (🎲), máx. en mesa (#️⃣) y ráfaga (⭐/💀, el mismo glyph de spawnBurst).
+let curUsarSpecial = {};
+SPECIALS.forEach(s => { curUsarSpecial[s.usar] = true; });
+function specialBlockHtml(spec, getVal) {
+  getVal = getVal || (k => CFG[k]);
+  const usar = curUsarSpecial[spec.usar];
+  const [vMin, vMax, vSt] = spec.valorRange, [pMin, pMax, pSt] = spec.pesoRange,
+        [mMin, mMax, mSt] = spec.maxRange, [sMin, sMax, sSt] = spec.starRange;
+  const valor = getVal(spec.valor), peso = getVal(spec.peso), max = getVal(spec.max), star = getVal(spec.star);
+  return `
+    <div class="special-group">
+      <button type="button" class="ball-toggle" data-usar-btn="${spec.usar}" aria-label="Usar ${spec.kind}" aria-pressed="${usar}">
+        ${ballSwatchHtml(spec.kind, 30)}
+        <span class="ball-toggle-check">${usar ? "✅" : "▫️"}</span>
+      </button>
+      <div class="${usar ? "" : "hidden"}" data-extra="${spec.usar}">
+        <div class="slider-row"><span title="Valor: puntos que suma (o resta) al capturarla">${ballSwatchHtml(spec.kind, 24)}</span>
+          <input type="range" id="s_${spec.valor}" min="${vMin}" max="${vMax}" step="${vSt}" value="${valor}">
+          <span class="slider-val" id="sv_${spec.valor}">${formatSliderVal(valor, vSt, "")}</span></div>
+        <div class="slider-row"><span class="slider-icon-clock" title="Peso: probabilidad relativa de que salga esta especial (vs. las otras) al azar">🎲</span>
+          <input type="range" id="s_${spec.peso}" min="${pMin}" max="${pMax}" step="${pSt}" value="${peso}">
+          <span class="slider-val" id="sv_${spec.peso}">${formatSliderVal(peso, pSt, "")}</span></div>
+        <div class="slider-row"><span class="slider-icon-clock" title="Máximo de esta especial en la mesa a la vez">#️⃣</span>
+          <input type="range" id="s_${spec.max}" min="${mMin}" max="${mMax}" step="${mSt}" value="${max}">
+          <span class="slider-val" id="sv_${spec.max}">${formatSliderVal(max, mSt, "")}</span></div>
+        <div class="slider-row"><span class="slider-icon-clock" title="Cantidad de íconos que salen disparados al capturarla">${spec.starGlyph}</span>
+          <input type="range" id="s_${spec.star}" min="${sMin}" max="${sMax}" step="${sSt}" value="${star}">
+          <span class="slider-val" id="sv_${spec.star}">${formatSliderVal(star, sSt, "")}</span></div>
+      </div>
+    </div>`;
+}
+function specialsBlockHtml(getVal) { return SPECIALS.map(spec => specialBlockHtml(spec, getVal)).join(""); }
+function bindSpecialsBlocks() {
+  SPECIALS.forEach(spec => {
+    document.querySelector(`[data-usar-btn="${spec.usar}"]`).onclick = () => {
+      curUsarSpecial[spec.usar] = !curUsarSpecial[spec.usar];
+      document.getElementById("specialsBlock").innerHTML = specialsBlockHtml();
+      bindSpecialsBlocks();
+    };
+    [[spec.valor, spec.valorRange], [spec.peso, spec.pesoRange], [spec.max, spec.maxRange], [spec.star, spec.starRange]]
+      .forEach(([key, range]) => {
+        const el = document.getElementById("s_" + key), out = document.getElementById("sv_" + key);
+        if (el && out) el.oninput = () => { out.textContent = formatSliderVal(el.value, range[2], ""); };
+      });
+  });
+}
+
+// ---- pisoEnCero: toggle con figura de "piso" (sustituye la casilla "Nunca bajar de 0"). ----
+// ON  = una barra sólida bajo la línea: el marcador mostrado no cae de 0.
+// OFF = línea punteada + flecha que la atraviesa: puede ir a negativo.
+function floorGlyphHtml(on) {
+  return `<svg viewBox="0 0 34 34" width="30" height="30" style="flex-shrink:0;display:block">
+    <circle cx="17" cy="11" r="6" fill="var(--accent)"></circle>
+    <line x1="4" y1="23" x2="30" y2="23" stroke="var(--text-dim)" stroke-width="2"${on ? "" : ' stroke-dasharray="3,2"'}></line>
+    ${on
+      ? `<rect x="4" y="23" width="26" height="4" rx="1" fill="var(--accent)"></rect>`
+      : `<path d="M17 21 L17 32 M13 28 L17 32 L21 28" fill="none" stroke="var(--text-dim)" stroke-width="2"></path>`}
+  </svg>`;
+}
+function pisoEnCeroToggleHtml() {
+  return `
+    <div class="special-group">
+      <button type="button" id="pisoEnCeroBtn" class="ball-toggle" aria-pressed="${curPisoEnCero}"
+        aria-label="Nunca mostrar el marcador por debajo de cero"
+        title="Nunca bajar de 0: el marcador mostrado nunca cae por debajo de cero; una racha negativa se recupera sola con los aciertos siguientes">
+        ${floorGlyphHtml(curPisoEnCero)}
+        <span class="ball-toggle-check">${curPisoEnCero ? "✅" : "▫️"}</span>
+      </button>
+    </div>`;
+}
+function bindPisoBlock() {
+  const b = document.getElementById("pisoEnCeroBtn");
+  if (b) b.onclick = () => {
+    curPisoEnCero = !curPisoEnCero;
+    document.getElementById("pisoBlock").innerHTML = pisoEnCeroToggleHtml();
+    bindPisoBlock();
+  };
+}
+
+// ---- Bloque "parpadeo": línea de tiempo del final de ronda + dos cuadros que parpadean EN VIVO. ----
+// (1) parpadeoDesde: cuántos segundos antes del final (🏁) arranca el parpadeo del área. La zona
+//     sombreada de la barra crece hacia la izquierda a medida que sube el valor.
+// (2) parpadeoHzInicial / parpadeoHzFinal: frecuencia al comenzar (lento) y al terminar (rápido).
+//     Cada cuadro parpadea de verdad a su frecuencia vía --blinkdur (= 1/Hz s). Lecturas sin unidad.
+const INTERVALO_TUPLE = ["intervaloEspecial", "specialTimer", 2, 60, 1, "", "Juego"];
+function blinkDur(hz) { return (1 / (parseFloat(hz) || 1)).toFixed(3) + "s"; }
+function parpadeoBlockHtml() {
+  return `
+    <div class="special-group">
+      <div class="blink-timeline"
+        title="Parpadeo del área: en los últimos segundos de la ronda la bahía parpadea. Este control fija cuántos segundos antes del final (🏁) arranca.">
+        <svg id="blinkTlPreview" viewBox="0 0 160 24" width="100%" height="24" preserveAspectRatio="none">
+          <rect x="0" y="9" width="160" height="6" rx="3" fill="var(--border)"></rect>
+          <rect id="blinkTlZone" x="120" y="4" width="40" height="16" rx="2" fill="var(--accent)" opacity="0.55"></rect>
+        </svg>
+        <div class="blink-timeline-row">
+          <input type="range" id="s_parpadeoDesde" min="0" max="60" step="1" value="${CFG.parpadeoDesde}">
+          <span class="slider-icon-clock">🏁</span>
+          <span class="slider-val" id="sv_parpadeoDesde">${Math.round(CFG.parpadeoDesde)}</span>
+        </div>
+      </div>
+      <div class="slider-row" title="Frecuencia del parpadeo al comenzar (lento) — el cuadro de la izquierda parpadea a esta velocidad">
+        <span class="blink-box" id="blinkBoxIni" style="--blinkdur:${blinkDur(CFG.parpadeoHzInicial)}"></span>
+        <input type="range" id="s_parpadeoHzInicial" min="0.2" max="10" step="0.1" value="${CFG.parpadeoHzInicial}">
+        <span class="slider-val" id="sv_parpadeoHzInicial">${Number(CFG.parpadeoHzInicial).toFixed(1)}</span>
+      </div>
+      <div class="slider-row" title="Frecuencia del parpadeo al terminar la ronda (rápido) — el cuadro de la izquierda parpadea a esta velocidad">
+        <span class="blink-box" id="blinkBoxFin" style="--blinkdur:${blinkDur(CFG.parpadeoHzFinal)}"></span>
+        <input type="range" id="s_parpadeoHzFinal" min="0.2" max="20" step="0.1" value="${CFG.parpadeoHzFinal}">
+        <span class="slider-val" id="sv_parpadeoHzFinal">${Number(CFG.parpadeoHzFinal).toFixed(1)}</span>
+      </div>
+    </div>`;
+}
+function updateBlinkPreview() {
+  const zone = document.getElementById("blinkTlZone");
+  if (zone) {
+    const el = document.getElementById("s_parpadeoDesde");
+    const desde = el ? (parseFloat(el.value) || 0) : (CFG.parpadeoDesde || 0);
+    const w = 160 * Math.max(0, Math.min(1, desde / (CFG.duracion || 90)));
+    zone.setAttribute("x", 160 - w);
+    zone.setAttribute("width", w);
+  }
+  const bi = document.getElementById("blinkBoxIni"), iEl = document.getElementById("s_parpadeoHzInicial");
+  const bf = document.getElementById("blinkBoxFin"), fEl = document.getElementById("s_parpadeoHzFinal");
+  if (bi && iEl) bi.style.setProperty("--blinkdur", blinkDur(iEl.value));
+  if (bf && fEl) bf.style.setProperty("--blinkdur", blinkDur(fEl.value));
+}
+function bindParpadeoBlock() {
+  [["parpadeoDesde", v => String(Math.round(v))],
+   ["parpadeoHzInicial", v => Number(v).toFixed(1)],
+   ["parpadeoHzFinal", v => Number(v).toFixed(1)]].forEach(([k, fmt]) => {
+    const el = document.getElementById("s_" + k), out = document.getElementById("sv_" + k);
+    if (el && out) el.oninput = () => { out.textContent = fmt(el.value); updateBlinkPreview(); };
+  });
+  updateBlinkPreview();
+}
+// intervaloEspecial va a mano (fuera de SLIDERS) para quedar pegado al bloque de especiales.
+function bindIntervaloRow() {
+  const el = document.getElementById("s_intervaloEspecial"), out = document.getElementById("sv_intervaloEspecial");
+  if (el && out) el.oninput = () => { out.textContent = String(Math.round(el.value)); };
+}
+
+function paramFormHtml() {
+  return paramGroups().map((g, i) => `
+    ${i > 0 ? `<div class="group-sep"></div>` : ""}
+    ${g === "Sesión" ? `<div id="bolasSesionBlock">${bolasSesionBlockHtml()}</div>` : ""}
+    ${SLIDERS.filter(p => p[6] === g).map(sliderRowHtml).join("")}
+    ${g === "Sesión" ? `<div id="pisoBlock">${pisoEnCeroToggleHtml()}</div>` : ""}
+    ${g === "Juego" ? `
+      <div id="speedRow">${speedRowHtml()}</div>
+      <div id="bocaBlock">${bocaBlockHtml()}</div>
+      <div id="neutralBlock">${neutralBlockHtml()}</div>
+      ${sliderRowHtml(INTERVALO_TUPLE)}
+      <div id="specialsBlock">${specialsBlockHtml()}</div>
+      <div id="parpadeoBlock">${parpadeoBlockHtml()}</div>` : ""}
+  `).join("");
+}
+// Lee un <input type=range id="s_<key>"> acotado a `range` ([min,max,...]); CFG[key] si no existe.
+function readSliderEl(key, range) {
+  const el = document.getElementById("s_" + key);
+  let v = el ? parseFloat(el.value) : CFG[key];
+  if (!Number.isFinite(v)) v = CFG[key];
+  return Math.max(range[0], Math.min(range[1], v));
+}
+// Igual, pero para un <input type=number id="p_<key>"> (los textbox de min/máx de rapidez).
+function readNumberEl(key, range) {
+  const el = document.getElementById("p_" + key);
+  let v = el ? parseFloat(el.value) : CFG[key];
+  if (!Number.isFinite(v)) v = CFG[key];
+  return Math.max(range[0], Math.min(range[1], v));
+}
+function readParamsFromForm() {
+  const out = {};
+  PARAMS.forEach(([k, , mn, mx, st]) => {
+    const el = document.getElementById("p_" + k);
+    if (!el) { out[k] = CFG[k]; return; }
+    if (st === null) { out[k] = el.checked; return; }
+    let v = parseFloat(el.value);
+    if (!Number.isFinite(v)) v = CFG[k];
+    if (mn != null) v = Math.max(mn, v);
+    if (mx != null) v = Math.min(mx, v);
+    out[k] = v;
+  });
+  SLIDERS.forEach(([k, , mn, mx]) => { out[k] = readSliderEl(k, [mn, mx]); });
+  out.velocidadMin = readNumberEl("velocidadMin", VELOCIDAD.velocidadMin);
+  out.velocidad = readSliderEl("velocidad", VELOCIDAD.velocidad);
+  out.velocidadMax = readNumberEl("velocidadMax", VELOCIDAD.velocidadMax);
+  Object.keys(BOLAS_SESION).forEach(k => { out[k] = readSliderEl(k, BOLAS_SESION[k]); });
+  Object.keys(BOCA).forEach(k => { out[k] = readSliderEl(k, BOCA[k]); });
+  SPECIALS.forEach(spec => {
+    out[spec.usar] = curUsarSpecial[spec.usar];
+    out[spec.valor] = readSliderEl(spec.valor, spec.valorRange);
+    out[spec.peso] = readSliderEl(spec.peso, spec.pesoRange);
+    out[spec.max] = readSliderEl(spec.max, spec.maxRange);
+    out[spec.star] = readSliderEl(spec.star, spec.starRange);
+  });
+  out.usarNeutrales = curUsarNeutrales;
+  out.neutralValor = curNeutralValor;
+  out.neutralesInicial = readSliderEl("neutralesInicial", [1, 20]);
+  out.pisoEnCero = curPisoEnCero;
+  out.intervaloEspecial = readSliderEl("intervaloEspecial", [2, 60]);
+  out.parpadeoDesde = readSliderEl("parpadeoDesde", [0, 60]);
+  out.parpadeoHzInicial = readSliderEl("parpadeoHzInicial", [0.2, 10]);
+  out.parpadeoHzFinal = readSliderEl("parpadeoHzFinal", [0.2, 20]);
+  return out;
+}
+// No hay concepto de "activo/inactivo" — sin un segundo dispositivo esperando esa señal, no
+// aporta nada más que un paso extra. El juego siempre está listo para jugarse; Ajustes es un
+// panel opcional (Guardar / Reiniciar partida), no una puerta obligatoria.
+function reiniciarPartida() {
+  applyCFG(readParamsFromForm());
+  round = 1; phase = "config";
+  players = mkPlayers(); balls = []; bursts = []; tally = mkTally();
+  updateOverlay();
+}
+function renderSettings() {
+  curUsarNeutrales = !!CFG.usarNeutrales;
+  curNeutralValor = CFG.neutralValor;
+  curNeutralesInicial = Math.max(1, Math.min(20, CFG.neutralesInicial || 4));
+  curPisoEnCero = !!CFG.pisoEnCero;
+  SPECIALS.forEach(spec => { curUsarSpecial[spec.usar] = !!CFG[spec.usar]; });
+  const scoreChips = playingSides().map(p => `
+    <span class="chip"><span class="dot" style="background:${esc(p.color || "#555")}"></span>
+      ${esc(p.name || ("Lado " + (p.side + 1)))}: ${dispTotal((p.scoreTotal || 0) + (p.scoreRound || 0))}</span>`).join("") || `<span class="scorebar-empty">○ ○ ○ ○</span>`;
+  const nR = Math.max(1, Math.round(CFG.numRondas || 1));
+  const pips = `<b>${"●".repeat(Math.min(Math.max(round, 1), nR))}</b>${"○".repeat(Math.max(0, nR - round))}`;
+  const phaseGlyph = { config: "⚙", ready: "⏳", countdown: "⏳", playing: "▶", summary: "📊", ended: "🏁" }[phase] || "⚙";
+  document.getElementById("settingsBody").innerHTML = `
+    <div class="card">
+      <div class="phase-line" title="Fase actual de la partida y avance de rondas">
+        <span class="phase-glyph">${phaseGlyph}</span>
+        <span class="round-pips">${pips}</span>
+      </div>
+      <div class="scorebar">${scoreChips}</div>
+      <div class="field" style="margin-top:1rem;justify-content:flex-start;gap:0.6rem;flex-wrap:wrap">
+        <button class="btn btn-primary btn-icon" id="stReiniciar" aria-label="Reiniciar partida"
+          title="Reiniciar partida: aplica los parámetros y vuelve a la pantalla de configuración de jugadores">↺</button>
+        <button class="btn btn-icon" id="stGuardar" aria-label="Guardar parámetros"
+          title="Guardar parámetros: aplica los cambios sin interrumpir la partida en curso (se notan en la próxima ronda)">💾</button>
+      </div>
+    </div>
+    <div class="card">
+      ${paramFormHtml()}
+      <div class="actions" style="display:flex;gap:0.6rem;margin-top:1.25rem;flex-wrap:wrap">
+        <button class="btn btn-icon" id="stDefaults" aria-label="Restaurar valores por defecto"
+          title="Restaurar todos los parámetros a los valores de fábrica">🏭</button>
+      </div>
+    </div>`;
+  document.getElementById("stReiniciar").onclick = () => { reiniciarPartida(); closeSettings(); };
+  document.getElementById("stGuardar").onclick = () => { applyCFG(readParamsFromForm()); saveLocal(); renderSettings(); };
+  bindNeutralBlock();
+  bindBolasSesionBlock();
+  bindBocaBlock();
+  bindSpecialsBlocks();
+  bindSpeedRow();
+  bindPisoBlock();
+  bindParpadeoBlock();
+  bindIntervaloRow();
+  SLIDERS.forEach(bindSliderRow);
+  document.getElementById("stDefaults").onclick = () => {
+    PARAMS.forEach(([k, , , , st]) => {
+      const el = document.getElementById("p_" + k);
+      if (!el) return;
+      if (st === null) el.checked = !!CFG_BASE[k]; else el.value = CFG_BASE[k];
+    });
+    SLIDERS.forEach(([k, , , , st, unit]) => {
+      const el = document.getElementById("s_" + k), out = document.getElementById("sv_" + k);
+      if (!el) return;
+      el.value = CFG_BASE[k];
+      if (out) out.textContent = formatSliderVal(CFG_BASE[k], st, unit);
+    });
+    curUsarNeutrales = !!CFG_BASE.usarNeutrales;
+    curNeutralValor = CFG_BASE.neutralValor;
+    curNeutralesInicial = CFG_BASE.neutralesInicial;
+    document.getElementById("neutralBlock").innerHTML = neutralBlockHtml();
+    bindNeutralBlock();
+    Object.keys(BOLAS_SESION).forEach(k => {
+      const [, , st, unit] = BOLAS_SESION[k];
+      const el = document.getElementById("s_" + k), out = document.getElementById("sv_" + k);
+      if (!el) return;
+      el.value = CFG_BASE[k];
+      if (out) out.textContent = formatSliderVal(CFG_BASE[k], st, unit || "");
+    });
+    Object.keys(BOCA).forEach(k => {
+      const [, , st] = BOCA[k];
+      const el = document.getElementById("s_" + k), out = document.getElementById("sv_" + k);
+      if (!el) return;
+      el.value = CFG_BASE[k];
+      if (out) out.textContent = k === "bocaCrecimiento" ? formatPercent(CFG_BASE[k], st) : formatSliderVal(CFG_BASE[k], st, "");
+    });
+    updateBocaPreview();
+    SPECIALS.forEach(spec => { curUsarSpecial[spec.usar] = !!CFG_BASE[spec.usar]; });
+    document.getElementById("specialsBlock").innerHTML = specialsBlockHtml(k => CFG_BASE[k]);
+    bindSpecialsBlocks();
+    ["velocidadMin", "velocidad", "velocidadMax"].forEach(k => {
+      const el = document.getElementById((k === "velocidad" ? "s_" : "p_") + k);
+      if (el) el.value = CFG_BASE[k];
+    });
+    curPisoEnCero = !!CFG_BASE.pisoEnCero;
+    document.getElementById("pisoBlock").innerHTML = pisoEnCeroToggleHtml();
+    bindPisoBlock();
+    [["s_intervaloEspecial", "sv_intervaloEspecial", CFG_BASE.intervaloEspecial, v => String(Math.round(v))],
+     ["s_parpadeoDesde", "sv_parpadeoDesde", CFG_BASE.parpadeoDesde, v => String(Math.round(v))],
+     ["s_parpadeoHzInicial", "sv_parpadeoHzInicial", CFG_BASE.parpadeoHzInicial, v => Number(v).toFixed(1)],
+     ["s_parpadeoHzFinal", "sv_parpadeoHzFinal", CFG_BASE.parpadeoHzFinal, v => Number(v).toFixed(1)]].forEach(([sid, oid, val, fmt]) => {
+      const el = document.getElementById(sid), out = document.getElementById(oid);
+      if (el) el.value = val;
+      if (out) out.textContent = fmt(val);
+    });
+    updateBlinkPreview();
+  };
+}
+function openSettings() { gamePaused = true; renderSettings(); settingsModal.classList.remove("hidden"); }
+function closeSettings() { gamePaused = false; settingsModal.classList.add("hidden"); updateOverlay(); }
+settingsBtn.onclick = openSettings;
+document.getElementById("settingsClose").onclick = closeSettings;
+
+// ---------------- Arranque ----------------
+loadLocal();
+updateOverlay();
+</script>
+</body>
+</html>
